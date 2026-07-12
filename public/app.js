@@ -456,6 +456,7 @@
     $("timeline").querySelectorAll(".tl-card").forEach((card) => {
       card.addEventListener("click", () => openEdit(card.dataset.id));
     });
+    drawSleepSpans(day);
     // 写真タップは編集ではなくライトボックスで表示（複数枚はスワイプ/矢印で切り替え）
     $("timeline").querySelectorAll(".tl-photos").forEach((el) => {
       el.addEventListener("click", (e) => {
@@ -464,6 +465,40 @@
         if (rec) openLightbox(photoList(rec.photo).map(photoSrc), 0, rec.note || "");
       });
     });
+  }
+
+  /** 寝る→起きるの間を蛍光ペン風のラインでつなぐ（日をまたぐ睡眠・進行中の睡眠にも対応） */
+  function drawSleepSpans(day) {
+    const tl = $("timeline");
+    tl.querySelectorAll(".sleep-span").forEach((el) => el.remove());
+    const lis = [...tl.children].filter((el) => el.tagName === "LI");
+    if (!lis.length) return;
+    const tlRect = tl.getBoundingClientRect();
+    const dotY = (li) => li.querySelector(".tl-rail").getBoundingClientRect().top - tlRect.top + 15; // 丸の中心
+    const spans = [];
+    const dayStart = new Date(`${currentDate}T00:00:00`);
+    // 前日から寝たまま日をまたいだ場合は、いちばん上から線を引く
+    let openY = allSleepBlocks().some((b) => b.start < dayStart && b.end > dayStart) ? 0 : null;
+    day.forEach((r, i) => {
+      if (!lis[i]) return;
+      if (r.type === "sleep") openY = dotY(lis[i]);
+      else if (r.type === "wake" && openY != null) { spans.push([openY, dotY(lis[i])]); openY = null; }
+    });
+    // 起きる記録がまだ無い（睡眠中 or 翌日に続く）→ 下に少しはみ出して「続いている」感を出す
+    if (openY != null) {
+      const endY = lis[lis.length - 1].getBoundingClientRect().bottom - tlRect.top;
+      spans.push([openY, endY + 22]);
+    }
+    const railLeft = lis[0].querySelector(".tl-rail").getBoundingClientRect().left - tlRect.left;
+    for (const [y1, y2] of spans) {
+      if (y2 - y1 < 8) continue;
+      const el = document.createElement("li");
+      el.className = "sleep-span";
+      el.style.top = `${y1}px`;
+      el.style.height = `${y2 - y1}px`;
+      el.style.left = `${railLeft - 1}px`;
+      tl.appendChild(el);
+    }
   }
 
   function scrollTimelineToEnd() {

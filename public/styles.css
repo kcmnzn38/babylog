@@ -169,8 +169,14 @@ button { font: inherit; color: inherit; }
 }
 
 /* ---- timeline ---- */
-.timeline { list-style: none; margin: 0; padding: 0; }
-.timeline li { display: flex; gap: 8px; align-items: flex-start; }
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline li { display: flex; gap: 8px; align-items: flex-start; position: relative; z-index: 1; }
+/* 寝る→起きるをつなぐ蛍光ペン風ライン */
+.timeline li.sleep-span {
+  position: absolute; width: 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--cat-sleep) 28%, transparent);
+  pointer-events: none; z-index: 0; display: block;
+}
 .tl-time {
   width: 42px; flex: none; text-align: right; font-variant-numeric: tabular-nums;
   font-size: 12px; font-weight: 700; color: var(--ink); padding-top: 8px;
