@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#fbf8f3" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#141418" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="べびログ">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="stylesheet" href="/styles.css">
+    <title>べびログ</title>
+  </head>
+  <body>
+    <div class="app">
+      <!-- ============ 記録タブ ============ -->
+      <section class="view" id="view-log">
+        <div class="log-head">
+          <header class="topbar">
+            <button class="nav-arrow" id="prevDay" type="button" aria-label="前の日">‹</button>
+            <div class="date-title" id="dateTitle">
+              <span class="date-main" id="dateMain">今日</span>
+              <span class="date-sub" id="dateSub"></span>
+              <input type="date" id="datePicker" class="date-jump" aria-label="日付を選んでジャンプ">
+            </div>
+            <button class="nav-arrow head-cam" id="headPhoto" type="button" aria-label="写真を追加">📷</button>
+            <button class="nav-arrow" id="nextDay" type="button" aria-label="次の日">›</button>
+          </header>
+          <div class="day-summary" id="daySummary"></div>
+        </div>
+
+        <ol class="timeline" id="timeline"></ol>
+        <p class="empty-state" id="timelineEmpty" hidden>まだ記録がありません。<br>下のボタンからすぐ記録できます。</p>
+        <div class="timeline-spacer"></div>
+      </section>
+
+      <!-- ============ まとめタブ ============ -->
+      <section class="view" id="view-summary" hidden>
+        <header class="topbar">
+          <button class="nav-arrow" id="prevWeek" type="button" aria-label="前の週">‹</button>
+          <div class="date-title" id="weekTitle">
+            <span class="date-main" id="weekLabel"></span>
+            <span class="date-sub" id="periodSub">週のまとめ</span>
+            <input type="date" id="weekPicker" class="date-jump" aria-label="週・月を選んでジャンプ">
+          </div>
+          <button class="nav-arrow" id="nextWeek" type="button" aria-label="次の週">›</button>
+        </header>
+        <nav class="segmented period-seg" id="periodToggle">
+          <button class="seg active" data-period="week" type="button">週</button>
+          <button class="seg" data-period="month" type="button">月</button>
+        </nav>
+        <nav class="segmented" id="summaryTabs" role="tablist">
+          <button class="seg active" data-metric="feed" type="button" role="tab">食事</button>
+          <button class="seg" data-metric="sleep" type="button" role="tab">睡眠</button>
+          <button class="seg" data-metric="diaper" type="button" role="tab">排泄</button>
+          <button class="seg" data-metric="health" type="button" role="tab">健康</button>
+        </nav>
+        <div class="summary-body" id="summaryBody"></div>
+      </section>
+
+      <!-- ============ 画像タブ ============ -->
+      <section class="view" id="view-album" hidden>
+        <header class="topbar center"><h1 class="page-title" id="albumTitle">画像</h1></header>
+        <div class="summary-body" id="albumBody"></div>
+      </section>
+
+      <!-- ============ 設定タブ ============ -->
+      <section class="view" id="view-settings" hidden>
+        <header class="topbar center"><h1 class="page-title">設定</h1></header>
+
+        <p class="readonly-banner" id="readonlyNote" hidden>👀 閲覧モードのため、設定の変更はできません（同期パスコードのみ変更できます）</p>
+
+        <div class="settings-group">
+          <h2 class="group-title">あかちゃん</h2>
+          <label class="field">名前<input id="setBabyName" type="text" placeholder="はな"></label>
+          <label class="field">よみがな・呼び名<input id="setBabyKana" type="text" placeholder="はな"></label>
+          <p class="hint">入れると、まとめの画像タブが「◯◯の写真」という表示になります。</p>
+          <label class="field">生年月日<input id="setBirthday" type="date"></label>
+          <label class="field">性別
+            <select id="setGender">
+              <option value="">未設定</option>
+              <option value="girl">女の子</option>
+              <option value="boy">男の子</option>
+            </select>
+          </label>
+          <div class="field-row">
+            <label class="field grow">出生時の体重 (kg)<input id="setBirthWeight" type="number" inputmode="decimal" step="0.01" min="0" placeholder="3.05"></label>
+            <label class="field grow">出生時の身長 (cm)<input id="setBirthHeight" type="number" inputmode="decimal" step="0.1" min="0" placeholder="48.5"></label>
+          </div>
+          <p class="hint">出生時の値は、まとめ→健康の推移グラフの起点になります。</p>
+          <button class="btn primary" id="saveProfile" type="button">保存</button>
+        </div>
+
+        <div class="settings-group">
+          <h2 class="group-title">記録のカスタマイズ</h2>
+          <div class="field-row">
+            <label class="field grow">ミルクの初期量 (ml)<input id="setDefMilk" type="number" inputmode="numeric" min="0" step="5" placeholder="前回の量"></label>
+            <label class="field grow">搾母乳の初期量 (ml)<input id="setDefExpressed" type="number" inputmode="numeric" min="0" step="5" placeholder="前回の量"></label>
+          </div>
+          <p class="hint">空のままなら、前回入力した量から始まります。</p>
+          <div class="sub-title">下のクイックボタン（左から6つ）</div>
+          <div id="quickSelects" class="quick-selects"></div>
+          <div class="sub-title">「その他」メニューの並び順</div>
+          <div id="typeOrderList" class="type-order-list"></div>
+          <p class="hint">↑で1つ上に移動できます。よく使うものを上にどうぞ。</p>
+        </div>
+
+        <div class="settings-group" id="syncGroup">
+          <h2 class="group-title">みんなで同期（クラウド）</h2>
+          <p class="hint">パスコードを入れると、この端末の記録が自動でクラウド(Vercel)に保存され、同じパスコードを入れた家族の端末と自動で同期します。</p>
+          <label class="field">同期パスコード
+            <span class="pw-wrap">
+              <input id="setSyncToken" type="password" autocomplete="off">
+              <button type="button" class="pw-eye" id="toggleToken" aria-label="パスコードを表示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </span>
+          </label>
+          <button class="btn secondary" id="syncNow" type="button">いますぐ同期</button>
+          <p class="hint" id="cloudStatus">未設定ならこの端末の中だけに保存されます。</p>
+        </div>
+
+        <div class="settings-group">
+          <h2 class="group-title">Googleへバックアップ</h2>
+          <p class="hint">記録はスプレッドシート（日本語の「記録」シート）へ、写真はGoogle Driveへバックアップします。Apps ScriptのURL（SETUP.md参照）を入れると使えます。毎日 3:00 の自動バックアップも同じ設定です。パスコードは上と共通。</p>
+          <label class="field">Apps ScriptのURL<input id="setSheetUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+          <label class="field">写真の保存先Driveフォルダ（任意）<input id="setDriveFolder" type="text" placeholder="フォルダのURLをそのまま貼ってOK"></label>
+          <p class="hint" id="driveFolderHint">指定すると、バックアップのたびに写真が「写真」「うんち」など種類ごとのサブフォルダへ保存されます。</p>
+          <button class="btn secondary" id="pushSheet" type="button">いますぐバックアップ</button>
+          <p class="hint" id="syncStatus"></p>
+          <button class="text-btn" id="pullSheet" type="button">シートから復元する（データが消えたときの緊急用）</button>
+        </div>
+
+        <div class="settings-group">
+          <h2 class="group-title">取り込み・復元</h2>
+          <p class="hint">ぴよログの「記録の出力」で書き出したtxtと、このアプリでJSON書き出ししたバックアップは、どちらもここから取り込めます。同じデータを2回取り込んでも重複しません。</p>
+          <label class="btn secondary file-btn">
+            ファイルを選ぶ（txt / JSON・複数可）
+            <input id="importFile" type="file" accept=".txt,.json,text/plain,application/json" multiple hidden>
+          </label>
+          <textarea id="importText" rows="5" placeholder="【ぴよログ】2026年7月&#10;----------&#10;2026/7/1(水) ..."></textarea>
+          <button class="btn secondary" id="importPaste" type="button">貼り付けたテキストを取り込む</button>
+          <p class="hint" id="importStatus"></p>
+        </div>
+
+        <div class="settings-group">
+          <h2 class="group-title">ファイルに書き出し</h2>
+          <div class="btn-row">
+            <button class="btn secondary" id="exportJson" type="button">JSON<span class="btn-sub">.json</span></button>
+            <button class="btn secondary" id="exportCsv" type="button">CSV<span class="btn-sub">.csv</span></button>
+            <button class="btn secondary" id="exportTxt" type="button">ぴよログ形式<span class="btn-sub">.txt</span></button>
+          </div>
+          <p class="hint">JSON（.json）は完全バックアップで、取り込みのファイル選択から選ぶと復元できます。CSV（.csv）は表計算ソフト用、ぴよログ形式（.txt）はぴよログと同じ見た目のテキストです。</p>
+        </div>
+
+        <div class="settings-group danger">
+          <h2 class="group-title">この端末のデータ</h2>
+          <p class="hint" id="dataCount"></p>
+          <p class="hint">記録はまずこの端末に保存され、クラウドと自動同期されます。下のボタンは<b>この端末のコピーを消すだけ</b>で、クラウドや家族の端末はそのまま。パスコードを入れ直せば全部戻ります。</p>
+          <button class="btn danger-btn" id="wipeData" type="button">この端末の記録をぜんぶ消す</button>
+        </div>
+        <p class="version-note">べびログ v2</p>
+      </section>
+    </div>
+
+    <!-- クイック記録ドック -->
+    <nav class="dock" id="dock" aria-label="すぐ記録">
+      <div class="quick-row" id="quickRow"></div>
+      <div class="tab-row">
+        <button class="tab active" data-view="log" type="button"><span class="tab-icon">✏️</span>記録</button>
+        <button class="tab" data-view="album" type="button"><span class="tab-icon">📷</span>画像</button>
+        <button class="tab" data-view="summary" type="button"><span class="tab-icon">📊</span>まとめ</button>
+        <button class="tab" data-view="settings" type="button"><span class="tab-icon">⚙️</span>設定</button>
+      </div>
+    </nav>
+
+    <!-- 記録・編集シート -->
+    <dialog id="recordSheet">
+      <form id="recordForm" method="dialog" autocomplete="off" novalidate>
+        <div class="sheet-head">
+          <span class="sheet-badge" id="sheetBadge"></span>
+          <button class="close-x" type="button" id="sheetClose" aria-label="閉じる">×</button>
+        </div>
+        <div class="field-row">
+          <label class="field grow">日付<input id="recDate" type="date" required></label>
+          <label class="field grow">時刻<input id="recTime" type="time" required></label>
+        </div>
+        <div class="time-adjust-row" id="timeChips"></div>
+
+        <div id="secAmount" hidden>
+          <div class="stepper-label" id="amountLabel">量 (ml)</div>
+          <div class="stepper">
+            <button type="button" class="step" data-delta="-10">−10</button>
+            <input id="recAmount" type="number" inputmode="numeric" min="0" step="5">
+            <button type="button" class="step" data-delta="10">＋10</button>
+          </div>
+        </div>
+
+        <div id="secBreast" hidden>
+          <div class="field-row">
+            <div class="grow">
+              <div class="stepper-label">左 (分)</div>
+              <div class="stepper compact">
+                <button type="button" class="step" data-delta="-1" data-target="recLeft">−</button>
+                <input id="recLeft" type="number" inputmode="numeric" min="0">
+                <button type="button" class="step" data-delta="1" data-target="recLeft">＋</button>
+              </div>
+            </div>
+            <div class="grow">
+              <div class="stepper-label">右 (分)</div>
+              <div class="stepper compact">
+                <button type="button" class="step" data-delta="-1" data-target="recRight">−</button>
+                <input id="recRight" type="number" inputmode="numeric" min="0">
+                <button type="button" class="step" data-delta="1" data-target="recRight">＋</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="secValue" hidden>
+          <div class="stepper-label" id="valueLabel">値</div>
+          <input id="recValue" type="number" inputmode="decimal" step="0.1" min="0" class="plain-input">
+        </div>
+
+        <div id="secPoop" hidden>
+          <div class="stepper-label">ようす（タップで選択）</div>
+          <div class="chip-row" id="poopChips"></div>
+        </div>
+
+        <label class="field" id="secTitle" hidden>タイトル<input id="recTitle" type="text" placeholder="爪切り、通院 など"></label>
+        <label class="field">メモ<input id="recNote" type="text" placeholder="任意"></label>
+
+        <div id="secPhoto">
+          <div class="photo-row">
+            <label class="btn secondary photo-btn">
+              <span id="photoBtnLabel">📷 写真をつける</span>
+              <input id="recPhotoFile" type="file" accept="image/*" hidden>
+            </label>
+          </div>
+          <div class="photo-preview-wrap" id="photoPreviewWrap" hidden></div>
+          <p class="hint" id="photoStatus" hidden></p>
+        </div>
+
+        <p class="rec-error" id="recError" hidden></p>
+        <div class="btn-row sheet-actions">
+          <button class="btn danger-btn" type="button" id="recDelete" hidden>削除</button>
+          <button class="btn primary grow" type="submit" id="recSave">登録</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- サマリー詳細 -->
+    <dialog id="detailSheet">
+      <div class="sheet-head">
+        <span class="sheet-badge" id="detailTitle"></span>
+        <button class="close-x" type="button" id="detailClose" aria-label="閉じる">×</button>
+      </div>
+      <div class="detail-body" id="detailBody"></div>
+    </dialog>
+
+    <!-- 種類ピッカー -->
+    <dialog id="typeSheet">
+      <div class="sheet-head">
+        <span class="sheet-badge">記録の種類</span>
+        <button class="close-x" type="button" id="typeClose" aria-label="閉じる">×</button>
+      </div>
+      <div class="type-grid" id="typeGrid"></div>
+    </dialog>
+
+    <!-- 初回セットアップ -->
+    <dialog id="welcomeSheet">
+      <form id="welcomeForm" method="dialog">
+        <h2 class="welcome-title">べびログへようこそ 🐣</h2>
+        <p class="hint">まずは赤ちゃんの情報を登録してください。ぴよログ等のほかアプリで記録していたデータは、あとで設定タブから取り込めます。</p>
+        <label class="field">名前<input id="welName" type="text" placeholder="はな" required></label>
+        <label class="field">生年月日<input id="welBirthday" type="date" required></label>
+        <label class="field">性別
+          <select id="welGender">
+            <option value="">未設定</option>
+            <option value="girl">女の子</option>
+            <option value="boy">男の子</option>
+          </select>
+        </label>
+        <button class="btn primary" type="submit">はじめる</button>
+        <button class="btn secondary welcome-skip" type="button" id="welSkip">あとで（同期・取り込みから復元する）</button>
+      </form>
+    </dialog>
+
+    <!-- 写真ライトボックス -->
+    <dialog id="photoLightbox">
+      <button type="button" class="lightbox-close" id="lightboxClose" aria-label="閉じる">×</button>
+      <button type="button" class="lightbox-nav prev" id="lightboxPrev" aria-label="前の写真" hidden>‹</button>
+      <button type="button" class="lightbox-nav next" id="lightboxNext" aria-label="次の写真" hidden>›</button>
+      <img id="lightboxImg" alt="写真">
+      <div class="lightbox-dots" id="lightboxDots"></div>
+      <p class="lightbox-caption" id="lightboxCaption" hidden></p>
+      <p class="lightbox-hint" id="lightboxHint" hidden>画像を長押し →「"写真"に追加」でも保存できます</p>
+      <div class="lightbox-actions">
+        <button type="button" id="lightboxShare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>シェア</button>
+        <button type="button" id="lightboxSave"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>保存</button>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" hidden>
+      <span id="toastMsg"></span>
+      <button type="button" id="toastAction" hidden>取り消す</button>
+    </div>
+
+    <script src="/growth-data.js"></script>
+    <script src="/parser.js"></script>
+    <script src="/store.js"></script>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

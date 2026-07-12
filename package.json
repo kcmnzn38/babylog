@@ -1,0 +1,12 @@
+{
+  "name": "babylog",
+  "version": "2.0.0",
+  "private": true,
+  "dependencies": {
+    "@vercel/blob": "^2.6.1"
+  },
+  "scripts": {
+    "dev": "python3 -m http.server 4173 --directory public",
+    "check": "node --check api/sync.js && node --check api/db.js && node --check api/export.js && node --check api/photo.js && node --check public/app.js && node --check public/store.js && node --check public/parser.js"
+  }
+}
