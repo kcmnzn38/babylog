@@ -28,6 +28,8 @@
     typeOrder: [], // 「その他」メニューの並び順（空なら既定順）
     lastSyncAt: "",
     cloudRev: "",
+    cloudSince: 0,       // 差分同期: 受信済みの最大syncedAt（サーバー時刻ms）
+    lastFullPullAt: 0,   // 差分同期: 最後に全件を取り直した時刻（1日1回の保険）
     welcomeSkipped: false
   };
 
@@ -176,6 +178,8 @@
   function updateSettings(patch) {
     const tokenChanged = patch.syncToken !== undefined && patch.syncToken !== settings.syncToken;
     settings = { ...settings, ...patch };
+    // 合言葉が変わったら同期位置をリセット（別のデータ源に切り替わるため全件取り直す）
+    if (tokenChanged) { settings.cloudRev = ""; settings.cloudSince = 0; settings.lastFullPullAt = 0; }
     persistSettings();
     if (tokenChanged) startCloud();
   }
@@ -210,7 +214,12 @@
   async function dbRequest(method, body) {
     const headers = { "Content-Type": "application/json", "X-App-Token": settings.syncToken };
     let url = `/api/db?babyId=${encodeURIComponent(settings.babyId)}`;
-    if (method === "GET") url += `&rev=${encodeURIComponent(settings.cloudRev || "")}`;
+    if (method === "GET") {
+      url += `&rev=${encodeURIComponent(settings.cloudRev || "")}`;
+      // 差分同期: 受信済み位置を送ると差分だけ返る。1日1回は全件を取り直す（保険）
+      const fullDue = Date.now() - (settings.lastFullPullAt || 0) > 86400000;
+      if (settings.cloudSince > 0 && !fullDue) url += `&since=${settings.cloudSince}`;
+    }
     const res = await fetch(url, {
       method, headers,
       body: method === "POST" ? JSON.stringify({ babyId: settings.babyId, ...body }) : undefined
@@ -263,8 +272,13 @@
       }
       const result = merge(res.records || [], { fromCloud: true });
       applyProfile(res.profile);
-      // サーバーに無い / こちらの方が新しい記録は送り返す（編集モードのみ）
-      if (!cloud.readonly && !cloud.photoOnly) {
+      // 差分同期: 受信済み位置を進める
+      let since = Number(settings.cloudSince || 0);
+      for (const r of res.records || []) since = Math.max(since, Number(r.syncedAt || 0));
+      settings.cloudSince = since;
+      // サーバーに無い / こちらの方が新しい記録は送り返す（編集モードのみ）。
+      // ※この照合は「全件」が届いたときだけ行う（差分に対してやると全記録を再送してしまう）
+      if (!res.delta && !cloud.readonly && !cloud.photoOnly) {
         const serverMap = new Map((res.records || []).map((r) => [r.id, String(r.updatedAt || "")]));
         for (const r of records) {
           const sv = serverMap.get(r.id);
@@ -272,6 +286,7 @@
         }
         persistPending();
       }
+      if (!res.delta) settings.lastFullPullAt = Date.now();
       settings.cloudRev = res.rev;
       persistSettings(true);
       setCloud("ok");

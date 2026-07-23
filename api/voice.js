@@ -166,7 +166,8 @@ function normalize(r, babyId) {
     updatedAt: now,
     customTitle: String(r.customTitle || "").slice(0, 60),
     photo: "",
-    deleted: 0
+    deleted: 0,
+    syncedAt: Date.now() // 差分同期用のサーバー側の受信時刻
   };
 }
 

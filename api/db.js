@@ -7,11 +7,16 @@
  *     （VercelのStorageでUpstash(Redis)を接続すると自動で入る。
  *       UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN でも可）
  *
- * GET  /api/db?babyId=default&rev=<手元のrev>
+ * GET  /api/db?babyId=default&rev=<手元のrev>&since=<手元の最新syncedAt>
  *   → 変更なし: { rev, unchanged: true }
- *   → 変更あり: { rev, records: [...], profile: {babyName, birthday} }
+ *   → 変更あり(since付き): { rev, records: [差分のみ], delta: true, profile }
+ *   → 変更あり(sinceなし・旧クライアント): { rev, records: [全件], profile }
  * POST /api/db  body: { babyId, records: [...], profile? }
  *   → { rev, count }   (idごとにupsert。deleted:true はトゥームストーン)
+ *
+ * 差分同期: 書き込み時にサーバー時刻 syncedAt を各記録へ刻む。
+ * クライアントは受信済みの最大syncedAtを since に入れて送ると差分だけ返る
+ * （端末の時計に依存しないので、オフライン明けの古いupdatedAtの記録も取りこぼさない）。
  */
 
 const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
@@ -39,6 +44,7 @@ module.exports = async function handler(req, res) {
     if (req.method === "GET") {
       const babyId = String(req.query.babyId || "default");
       const clientRev = String(req.query.rev || "");
+      const since = Number(req.query.since || 0) || 0;
       const rev = (await redis([["GET", key(babyId, "rev")]]))[0] || "0";
       if (clientRev && clientRev === rev) {
         respond(res, 200, { rev, unchanged: true, readonly: !isEdit, mode });
@@ -48,8 +54,11 @@ module.exports = async function handler(req, res) {
         ["HVALS", key(babyId, "records")],
         ["GET", key(babyId, "profile")]
       ]);
-      const records = (values || []).map((v) => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
-      respond(res, 200, { rev, records, profile: safeParse(profileRaw), readonly: !isEdit, mode });
+      let records = (values || []).map((v) => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
+      // since付き → 差分だけ返す（5秒の重なりを持たせてインスタンス間の時計差を吸収。マージは冪等なので重複は無害）
+      const delta = since > 0;
+      if (delta) records = records.filter((r) => Number(r.syncedAt || 0) > since - 5000);
+      respond(res, 200, { rev, records, delta, profile: safeParse(profileRaw), readonly: !isEdit, mode });
       return;
     }
 
@@ -74,7 +83,8 @@ module.exports = async function handler(req, res) {
         });
       }
       const cmds = [];
-      for (const r of toWrite) cmds.push(["HSET", key(babyId, "records"), String(r.id), JSON.stringify(normalize(r, babyId))]);
+      const syncedAt = Date.now(); // 差分同期用のサーバー側の受信時刻
+      for (const r of toWrite) cmds.push(["HSET", key(babyId, "records"), String(r.id), JSON.stringify(normalize(r, babyId, syncedAt))]);
       const rev = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       cmds.push(["SET", key(babyId, "rev"), rev]);
       if (isEdit && body.profile && (body.profile.babyName || body.profile.birthday)) {
@@ -102,7 +112,7 @@ module.exports = async function handler(req, res) {
 
 function key(babyId, part) { return `babylog:${babyId}:${part}`; }
 
-function normalize(r, babyId) {
+function normalize(r, babyId, syncedAt) {
   return {
     id: String(r.id),
     babyId,
@@ -117,7 +127,8 @@ function normalize(r, babyId) {
     updatedAt: String(r.updatedAt || ""),
     customTitle: String(r.customTitle || ""),
     photo: String(r.photo || ""),
-    deleted: r.deleted ? 1 : 0
+    deleted: r.deleted ? 1 : 0,
+    syncedAt: Number(syncedAt || r.syncedAt || 0)
   };
 }
 
