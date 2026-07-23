@@ -608,3 +608,19 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 .axis-text { font-size: 10px; fill: var(--ink-3); }
 .bar-label { font-size: 10px; font-weight: 700; fill: var(--ink-2); }
 .bar-total { font-size: 11px; font-weight: 700; fill: var(--ink); }
+
+/* ---------- 写真の読み込み失敗プレースホルダー＆案内 ---------- */
+img.photo-broken {
+  cursor: pointer;
+  object-fit: contain !important;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.photo-err-text {
+  font-size: 14px; color: var(--ink-2); line-height: 1.75; margin: 0 0 12px;
+}
+.photo-err-text strong { color: var(--ink); }
+.drive-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  text-decoration: none; width: 100%; box-sizing: border-box;
+}
+.drive-btn svg { width: 20px; height: 18px; flex: none; }

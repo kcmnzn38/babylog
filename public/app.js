@@ -706,6 +706,26 @@
     return `/api/photo?pathname=${encodeURIComponent(p)}&t=${encodeURIComponent(S.settings.syncToken)}`;
   }
 
+  // 読み込みに失敗した写真のプレースホルダー（無料枠の一時制限・オフライン時など）
+  const BROKEN_PHOTO_SVG = "data:image/svg+xml," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">' +
+    '<rect width="96" height="96" rx="14" fill="#888" opacity="0.14"/>' +
+    '<text x="48" y="52" font-size="32" text-anchor="middle" opacity="0.55">📷</text>' +
+    '<text x="48" y="74" font-size="10" text-anchor="middle" fill="#888">タップで案内</text></svg>'
+  );
+
+  /** 写真が表示できないときの案内モーダル（Driveのバックアップへ誘導） */
+  function openPhotoErr() {
+    const folderId = (S.settings.driveFolderId || "").trim();
+    const link = $("photoErrDrive");
+    link.hidden = !folderId;
+    if (folderId) link.href = `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}`;
+    $("photoErrDriveNote").textContent = folderId
+      ? "バックアップ済みの写真は、Googleドライブのフォルダからいつでも見られます（家族が開くにはフォルダの共有設定が必要です）。"
+      : "設定タブの「写真バックアップ先のDriveフォルダ」を設定しておくと、ここからバックアップの写真を開けます。";
+    $("photoErrDialog").showModal();
+  }
+
   function renderPhotoPreview() {
     const wrap = $("photoPreviewWrap");
     wrap.hidden = !sheetPhotos.length;
@@ -1484,8 +1504,29 @@
       if (Math.abs(dx) > 40) stepLightbox(dx < 0 ? 1 : -1);
     }, { passive: true });
 
+    // 写真の読み込み失敗 → プレースホルダーに差し替え（タップでDrive案内モーダル）
+    document.addEventListener("error", (e) => {
+      const img = e.target;
+      if (!(img instanceof HTMLImageElement) || img.dataset.broken) return;
+      const ours = String(img.src || "").includes("/api/photo") ||
+        img.closest(".tl-photos, .a-ph, .photo-thumb, #photoLightbox, .d-photos");
+      if (!ours) return;
+      img.dataset.broken = "1";
+      img.src = BROKEN_PHOTO_SVG;
+      img.classList.add("photo-broken");
+    }, true);
+    document.addEventListener("click", (e) => {
+      const img = e.target;
+      if (img instanceof HTMLImageElement && img.dataset.broken) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPhotoErr();
+      }
+    }, true);
+    $("photoErrClose").addEventListener("click", () => $("photoErrDialog").close());
+
     // モーダルの外側（背景）タップで閉じる
-    ["recordSheet", "typeSheet", "welcomeSheet", "detailSheet"].forEach((id) => {
+    ["recordSheet", "typeSheet", "welcomeSheet", "detailSheet", "photoErrDialog"].forEach((id) => {
       const dlg = $(id);
       dlg.addEventListener("click", (e) => {
         if (e.target !== dlg) return;
