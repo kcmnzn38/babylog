@@ -62,9 +62,15 @@ module.exports = async function handler(req, res) {
       });
       if (!result) throw httpError(404, "写真が見つかりません");
 
+      // 写真は一度アップロードしたら変わらない（pathnameが毎回ユニーク）ので、
+      // 強くキャッシュして転送量とBlob読み取りを節約する:
+      //   max-age=1年+immutable ... 各端末は再ダウンロードも再確認もしない
+      //   s-maxage=1日 ... Vercelのエッジにも1日キャッシュ（家族の初回表示もオリジンまで来ない）
+      // ※URLに合言葉が入るためキャッシュキーは合言葉ごとに分かれる。合言葉を変えた場合も最長1日で消える
+      const CACHE = "public, max-age=31536000, s-maxage=86400, immutable";
       if (result.statusCode === 304) {
         res.setHeader("ETag", result.blob.etag);
-        res.setHeader("Cache-Control", "private, no-cache");
+        res.setHeader("Cache-Control", CACHE);
         res.statusCode = 304;
         res.end();
         return;
@@ -74,7 +80,7 @@ module.exports = async function handler(req, res) {
       res.setHeader("Content-Type", result.blob.contentType || "image/jpeg");
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("ETag", result.blob.etag);
-      res.setHeader("Cache-Control", "private, no-cache");
+      res.setHeader("Cache-Control", CACHE);
       res.statusCode = 200;
       Readable.fromWeb(result.stream).pipe(res);
       return;
