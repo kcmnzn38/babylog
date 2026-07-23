@@ -351,7 +351,10 @@
   }
 
   async function lightboxBlob() {
-    const res = await fetch(lightboxSrc);
+    // シェア・保存はJSでバイトを読むため、同一オリジンのストリーミング配信(?stream=1)を使う
+    // （通常の表示は署名付きURLへのリダイレクトでCDNから直接配信される）
+    const src = lightboxSrc.startsWith("/api/photo") ? `${lightboxSrc}&stream=1` : lightboxSrc;
+    const res = await fetch(src);
     if (!res.ok) throw new Error("写真を取得できませんでした");
     return await res.blob();
   }
