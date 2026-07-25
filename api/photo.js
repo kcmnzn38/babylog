@@ -17,15 +17,17 @@ const { Readable } = require("node:stream");
 const MAX_BYTES = 4 * 1024 * 1024;
 
 /*
- * 配信は「署名付きURLへのリダイレクト」方式:
- *   合言葉を確認 → 期限つきの署名付きURLを発行して302で返す
- *   → ブラウザはBlobのCDNから直接ダウンロードする（画像のバイトが関数を通らない）
- * これでFast Origin Transferをほぼ使わない。発行に使う委任トークンは
- * インスタンス内で使い回す（コントロールAPI呼び出しの節約）。
- * 有効期限の関係: 委任7日 > 署名URL24時間 > リダイレクトのキャッシュ1時間
- * （キャッシュ中に期限切れURLへ飛ばないよう、必ずこの順で短くする。
- *   キャッシュと使い回しを短めにしてあるのは、万一不良なURLが発行されても
- *   長く残らないようにするため。リダイレクト自体は数百バイトなので再取得は安い）
+ * 配信方式は2つ（環境変数 PHOTO_DELIVERY で選択）:
+ *
+ * 既定「stream」: 合言葉を確認してサーバーが画像をそのまま返す。
+ *   URLが変わらないので端末の1年キャッシュ（immutable）が効き、2回目以降は即表示。
+ *   転送量は初回表示のみ（家族利用なら月0.5GB未満＝無料枠の数%）。
+ *
+ * 「redirect」: 期限つき署名URLへ302 → BlobのCDNから直接ダウンロード。
+ *   画像のバイトが関数を通らず転送量ほぼゼロだが、毎回2往復になり表示が一拍遅い。
+ *   閲覧者が多い大規模運用向け。
+ *   有効期限の関係: 委任7日 > 署名URL24時間 > リダイレクトのキャッシュ1時間
+ *   （キャッシュ中に期限切れURLへ飛ばないよう、必ずこの順で短くする）
  */
 let signedTokenCache = null; // { promise, issuedAt }
 async function signedToken() {
@@ -87,10 +89,10 @@ module.exports = async function handler(req, res) {
       const pathname = String((req.query && req.query.pathname) || "");
       if (!pathname) throw httpError(400, "pathnameがありません");
 
-      // 既定: 署名付きURLへ302（画像はBlobのCDNから直接配信）。
-      // ?stream=1 のときだけ従来どおり関数がバイトを中継する
+      // 既定はストリーミング配信（上のコメント参照）。?stream=1 は常にストリーミング
       // （fetchでバイトを読むシェア・保存機能用。CORSの影響を受けないように）
-      const wantStream = String((req.query && req.query.stream) || "") === "1";
+      const wantStream = String((req.query && req.query.stream) || "") === "1" ||
+        (process.env.PHOTO_DELIVERY || "stream") !== "redirect";
       if (!wantStream && typeof issueSignedToken === "function" && typeof presignUrl === "function") {
         try {
           const { presignedUrl } = await presignUrl(await signedToken(), {
