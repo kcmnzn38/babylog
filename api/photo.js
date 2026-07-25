@@ -22,14 +22,16 @@ const MAX_BYTES = 4 * 1024 * 1024;
  *   → ブラウザはBlobのCDNから直接ダウンロードする（画像のバイトが関数を通らない）
  * これでFast Origin Transferをほぼ使わない。発行に使う委任トークンは
  * インスタンス内で使い回す（コントロールAPI呼び出しの節約）。
- * 有効期限の関係: 委任7日 > 署名URL5日 > リダイレクトのキャッシュ4日
- * （キャッシュ中に期限切れURLへ飛ばないよう、必ずこの順で短くする）
+ * 有効期限の関係: 委任7日 > 署名URL24時間 > リダイレクトのキャッシュ1時間
+ * （キャッシュ中に期限切れURLへ飛ばないよう、必ずこの順で短くする。
+ *   キャッシュと使い回しを短めにしてあるのは、万一不良なURLが発行されても
+ *   長く残らないようにするため。リダイレクト自体は数百バイトなので再取得は安い）
  */
 let signedTokenCache = null; // { promise, issuedAt }
 async function signedToken() {
   const now = Date.now();
   // Promiseごとキャッシュ: アルバムを開いた直後の同時リクエストでも発行APIを1回しか叩かない
-  if (signedTokenCache && now - signedTokenCache.issuedAt < 1.5 * 24 * 3600 * 1000) {
+  if (signedTokenCache && now - signedTokenCache.issuedAt < 3600 * 1000) {
     return signedTokenCache.promise;
   }
   const promise = issueSignedToken({
@@ -95,11 +97,11 @@ module.exports = async function handler(req, res) {
             operation: "get",
             pathname,
             access: "private",
-            validUntil: Date.now() + 5 * 24 * 3600 * 1000
+            validUntil: Date.now() + 24 * 3600 * 1000
           });
           res.statusCode = 302;
           res.setHeader("Location", presignedUrl);
-          res.setHeader("Cache-Control", "private, max-age=345600"); // 4日（URLの期限5日より短く）
+          res.setHeader("Cache-Control", "private, max-age=3600"); // 1時間（URLの期限24時間より短く）
           res.end();
           return;
         } catch (_) {

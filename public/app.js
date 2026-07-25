@@ -1500,7 +1500,14 @@
       if (tries >= 2) return;
       img.dataset.retry = String(tries + 1);
       setTimeout(() => {
-        if (img.isConnected) { img.src = ""; img.src = src; }
+        if (!img.isConnected) return;
+        // 2回目はキャッシュ迂回パラメータ付きで取り直す
+        // （不良なリダイレクトがブラウザにキャッシュされていても、新しいURLで再発行させて回復できる）
+        const next = tries >= 1 && src.includes("/api/photo")
+          ? `${src}${src.includes("?") ? "&" : "?"}rb=${Date.now()}`
+          : src;
+        img.src = "";
+        img.src = next;
       }, 800 * (tries + 1));
     }, true);
 
