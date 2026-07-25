@@ -757,32 +757,52 @@
     btn.textContent = on ? "⏳ 写真をアップロード中…" : "登録";
   }
 
-  async function uploadPhoto(file) {
+  /** 複数選択に対応: 写真タイプは残り枠まで一気に追加、他の種類は1枚を差し替え */
+  async function uploadPhotos(files) {
     const status = $("photoStatus");
     status.hidden = false;
     if (!S.settings.syncToken) {
       status.textContent = "⚠️ 写真を使うには設定で同期パスコードを入れてください";
       return;
     }
+    let list = [...files];
+    let truncated = 0;
+    if (sheetType === "photo") {
+      const remain = Math.max(0, maxPhotos() - sheetPhotos.length);
+      truncated = Math.max(0, list.length - remain);
+      list = list.slice(0, remain);
+    } else {
+      truncated = 0;
+      list = list.slice(0, 1); // 写真以外は1枚を差し替え
+    }
+    if (!list.length) {
+      status.textContent = `⚠️ 写真は${maxPhotos()}枚までです`;
+      return;
+    }
     setUploadingUI(true);
     try {
-      status.textContent = "📤 写真を縮小してアップロード中...";
-      const blob = await resizeImage(file);
-      const res = await fetch("/api/photo", {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", "X-App-Token": S.settings.syncToken },
-        body: blob
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) throw new Error(data.error || `アップロード失敗 (${res.status})`);
-      const p = data.pathname || data.url;
-      if (sheetType === "photo") {
-        if (sheetPhotos.length < maxPhotos()) sheetPhotos.push(p);
-      } else {
-        sheetPhotos = [p]; // 写真以外は1枚を差し替え
+      for (let i = 0; i < list.length; i++) {
+        status.textContent = list.length > 1
+          ? `📤 写真をアップロード中... (${i + 1}/${list.length}枚目)`
+          : "📤 写真を縮小してアップロード中...";
+        const blob = await resizeImage(list[i]);
+        const res = await fetch("/api/photo", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream", "X-App-Token": S.settings.syncToken },
+          body: blob
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.error) throw new Error(data.error || `アップロード失敗 (${res.status})`);
+        const p = data.pathname || data.url;
+        if (sheetType === "photo") sheetPhotos.push(p);
+        else sheetPhotos = [p];
+        renderPhotoPreview();
       }
-      renderPhotoPreview();
-      status.hidden = true;
+      if (truncated > 0) {
+        status.textContent = `⚠️ ${maxPhotos()}枚までなので、選んだうち${list.length}枚だけ追加しました`;
+      } else {
+        status.hidden = true;
+      }
     } catch (err) {
       status.textContent = `⚠️ ${err.message}`;
     } finally {
@@ -1524,8 +1544,8 @@
 
     $("recordForm").addEventListener("submit", saveSheet);
     $("recPhotoFile").addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (file) uploadPhoto(file);
+      const files = [...e.target.files];
+      if (files.length) uploadPhotos(files);
       e.target.value = "";
     });
     // 添付プレビュー: ✕で外す、サムネタップでモーダル表示
