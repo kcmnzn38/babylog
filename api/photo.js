@@ -25,18 +25,24 @@ const MAX_BYTES = 4 * 1024 * 1024;
  * 有効期限の関係: 委任7日 > 署名URL5日 > リダイレクトのキャッシュ4日
  * （キャッシュ中に期限切れURLへ飛ばないよう、必ずこの順で短くする）
  */
-let signedTokenCache = null; // { token, issuedAt }
+let signedTokenCache = null; // { promise, issuedAt }
 async function signedToken() {
   const now = Date.now();
+  // Promiseごとキャッシュ: アルバムを開いた直後の同時リクエストでも発行APIを1回しか叩かない
   if (signedTokenCache && now - signedTokenCache.issuedAt < 1.5 * 24 * 3600 * 1000) {
-    return signedTokenCache.token;
+    return signedTokenCache.promise;
   }
-  const token = await issueSignedToken({
+  const promise = issueSignedToken({
     operations: ["get"],
     validUntil: now + 7 * 24 * 3600 * 1000
   });
-  signedTokenCache = { token, issuedAt: now };
-  return token;
+  signedTokenCache = { promise, issuedAt: now };
+  try {
+    return await promise;
+  } catch (err) {
+    signedTokenCache = null; // 失敗を使い回さない
+    throw err;
+  }
 }
 
 module.exports = async function handler(req, res) {
