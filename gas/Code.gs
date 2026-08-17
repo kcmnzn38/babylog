@@ -47,7 +47,7 @@ var TYPE_LABEL = {
   sleep: "寝る", wake: "起きる", pee: "おしっこ", poop: "うんち",
   bath: "お風呂", lotion: "保湿", temperature: "体温", weight: "体重", height: "身長",
   medicine: "くすり", vaccine: "予防接種", vomit: "吐く", burp: "ゲップ",
-  hiccup: "しゃっくり", tummy: "タミータイム", walk: "さんぽ", memo: "メモ", custom: "その他"
+  hiccup: "しゃっくり", tummy: "タミータイム", walk: "さんぽ", book: "えほん", memo: "メモ", custom: "その他"
 };
 
 function doGet(e) {

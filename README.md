@@ -61,7 +61,7 @@ id, babyId, date, time, type, amountMl, leftMin, rightMin, note, createdAt, upda
 
 `type` 一覧: milk / breast / expressed / pump / frozen / sleep / wake / pee / poop / bath /
 lotion / temperature / weight / height / medicine / vaccine / vomit / burp / hiccup / tummy /
-walk / memo / custom
+walk / book / memo / custom
 （`amountMl` は種類により ml / °C / kg / 睡眠分 を格納）
 
 ## ローカルで見る

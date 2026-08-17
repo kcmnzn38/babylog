@@ -21,7 +21,7 @@ const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_R
 const TYPES = [
   "milk", "breast", "expressed", "pump", "frozen", "sleep", "wake", "pee", "poop",
   "bath", "lotion", "temperature", "weight", "height", "medicine", "vaccine",
-  "vomit", "burp", "hiccup", "tummy", "walk", "memo", "custom"
+  "vomit", "burp", "hiccup", "tummy", "walk", "book", "memo", "custom"
 ];
 
 module.exports = async function handler(req, res) {
@@ -89,7 +89,7 @@ async function askGemini(text) {
 ユーザーの発話を、以下のtypeの記録の配列に変換してください:
 - milk=ミルク(amountMl=ml), expressed=搾母乳(amountMl), breast=母乳(leftMin/rightMin=左右の分数。左右不明なら両方に半分ずつ)
 - sleep=寝た, wake=起きた, pee=おしっこ, poop=うんち
-- bath=お風呂, lotion=保湿, walk=さんぽ, tummy=タミータイム, burp=ゲップ, hiccup=しゃっくり, vomit=吐いた
+- bath=お風呂, lotion=保湿, walk=さんぽ, book=えほん(絵本を読んだ), tummy=タミータイム, burp=ゲップ, hiccup=しゃっくり, vomit=吐いた
 - temperature=体温(amountMl=°C), weight=体重(amountMl=kg), height=身長(amountMl=cm)
 - medicine=くすり(customTitleに薬名), vaccine=予防接種(customTitle), memo=メモ, custom=その他(customTitle)
 

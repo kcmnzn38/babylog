@@ -36,6 +36,7 @@
     hiccup:      { label: "しゃっくり", icon: "😯", cat: "care" },
     tummy:       { label: "タミータイム", icon: "🐢", cat: "care" },
     walk:        { label: "さんぽ",   icon: "🚶", cat: "care" },
+    book:        { label: "えほん",   icon: "📖", cat: "care" },
     photo:       { label: "写真", icon: "📷", cat: "memo" },
     memo:        { label: "メモ",     icon: "📝", cat: "memo" },
     custom:      { label: "その他",   icon: "⭐", cat: "memo" }
@@ -108,6 +109,7 @@
     if (event.startsWith("しゃっくり")) { r.type = "hiccup"; return r; }
     if (event.startsWith("タミータイム")) { r.type = "tummy"; return r; }
     if (event.startsWith("さんぽ") || event.startsWith("散歩")) { r.type = "walk"; return r; }
+    if (event.startsWith("えほん") || event.startsWith("絵本")) { r.type = "book"; return r; }
     if (event.startsWith("吐く") || event.startsWith("吐き戻し")) { r.type = "vomit"; return r; }
     if (event.startsWith("予防接種")) {
       r.type = "vaccine";

@@ -833,7 +833,7 @@
   }
 
   // ---------- type sheet ----------
-  const TYPE_SHEET_KEYS = ["photo", "pump", "frozen", "bath", "lotion", "burp", "hiccup", "tummy", "walk", "temperature", "weight", "height", "medicine", "vaccine", "vomit", "memo", "custom"];
+  const TYPE_SHEET_KEYS = ["photo", "pump", "frozen", "bath", "lotion", "burp", "hiccup", "tummy", "walk", "book", "temperature", "weight", "height", "medicine", "vaccine", "vomit", "memo", "custom"];
 
   /** 設定の並び順（不正キーは除外し、足りないものは既定順で後ろに補完） */
   function orderedTypeKeys() {
