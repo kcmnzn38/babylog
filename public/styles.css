@@ -662,3 +662,16 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 #secBook #bookSearch { margin-bottom: 10px; }
 #secBook #bookSelected { margin-bottom: 10px; }
 #secBook .book-pick-list { margin-top: 0; }
+/* えほんカード: [表紙] [えほん／本のタイトル] [メモ(薄字・縦中央)] [写真] */
+.tl-main.tl-book-main { display: flex; flex-direction: row; align-items: center; gap: 10px; min-width: 0; }
+.tl-book-head { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: none; max-width: 60%; }
+.tl-book-title {
+  font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tl-book-memo {
+  flex: 1; min-width: 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* 写真つきでも えほんカードは横並びを保つ */
+.tl-card[data-photo-big] .tl-main.tl-book-main { flex-direction: row; align-items: center; }
