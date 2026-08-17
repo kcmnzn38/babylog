@@ -338,9 +338,9 @@
           <span>🖼 バーコードを撮影して読み取る</span>
           <input id="bookScanFile" type="file" accept="image/*" capture="environment" hidden>
         </label>
-        <div class="field-row" style="margin-top:10px">
+        <div class="field-row isbn-row">
           <label class="field grow">ISBNを手入力<input id="bookIsbnInput" type="text" inputmode="numeric" placeholder="9784834000825" autocomplete="off"></label>
-          <button class="btn secondary" type="button" id="bookIsbnLookup" style="align-self:flex-end">検索</button>
+          <button class="btn secondary isbn-btn" type="button" id="bookIsbnLookup">検索</button>
         </div>
         <div class="scan-wrap" id="scanWrap" hidden>
           <video id="scanVideo" playsinline muted></video>
