@@ -9,6 +9,8 @@
   const RECORDS_KEY = "babylog.records.v2";
   const SETTINGS_KEY = "babylog.settings.v2";
   const PENDING_KEY = "babylog.pending.v1";
+  const BOOKS_KEY = "babylog.books.v1";
+  const PENDING_BOOKS_KEY = "babylog.pendingBooks.v1";
   const TOMBSTONE_DAYS = 90;
 
   const defaultSettings = {
@@ -30,12 +32,15 @@
     cloudRev: "",
     cloudSince: 0,       // 差分同期: 受信済みの最大syncedAt（サーバー時刻ms）
     lastFullPullAt: 0,   // 差分同期: 最後に全件を取り直した時刻（1日1回の保険）
+    bookRev: "",         // 絵本マスタの受信済みリビジョン
     welcomeSkipped: false
   };
 
   let records = [];   // トゥームストーン含む
   let settings = { ...defaultSettings };
   let pendingIds = new Set();
+  let books = [];     // 絵本マスタ（トゥームストーン含む）
+  let pendingBookIsbns = new Set();
   const listeners = [];
 
   // クラウド同期の状態（UI表示用）。readonly=閲覧用 / photoOnly=写真用パスコードで接続中
@@ -62,6 +67,13 @@
     try {
       pendingIds = new Set(JSON.parse(localStorage.getItem(PENDING_KEY) || "[]"));
     } catch (_) { pendingIds = new Set(); }
+    try {
+      books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
+      if (!Array.isArray(books)) books = [];
+    } catch (_) { books = []; }
+    try {
+      pendingBookIsbns = new Set(JSON.parse(localStorage.getItem(PENDING_BOOKS_KEY) || "[]"));
+    } catch (_) { pendingBookIsbns = new Set(); }
     pruneTombstones();
     sortRecords();
   }
@@ -175,6 +187,65 @@
     return records.filter((r) => !r.deleted && r.date === dateStr);
   }
 
+  // ================= 絵本マスタ =================
+
+  function persistBooks(silent) {
+    localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+    if (!silent) emit();
+  }
+  function persistPendingBooks() {
+    localStorage.setItem(PENDING_BOOKS_KEY, JSON.stringify([...pendingBookIsbns]));
+  }
+  function liveBooks() {
+    return books.filter((b) => !b.deleted)
+      .slice().sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  }
+
+  /** 絵本を登録/更新（isbnがキー）。クラウドにも自動同期 */
+  function upsertBook(book) {
+    const now = new Date().toISOString();
+    const isbn = String(book.isbn || "").replace(/[^0-9Xx]/g, "");
+    if (!isbn) return null;
+    const idx = books.findIndex((b) => b.isbn === isbn);
+    const full = {
+      isbn,
+      title: String(book.title || "").trim(),
+      author: String(book.author || "").trim(),
+      publisher: String(book.publisher || "").trim(),
+      cover: String(book.cover || ""),
+      createdAt: idx >= 0 ? books[idx].createdAt || now : now,
+      updatedAt: now,
+      deleted: book.deleted ? 1 : 0
+    };
+    if (idx >= 0) books[idx] = full;
+    else books.push(full);
+    persistBooks();
+    pendingBookIsbns.add(isbn);
+    persistPendingBooks();
+    if (cloudEnabled()) { clearTimeout(pushTimer); pushTimer = setTimeout(() => { flushPush().catch(() => {}); }, 800); }
+    return full;
+  }
+
+  function removeBook(isbn) {
+    const b = books.find((x) => x.isbn === isbn && !x.deleted);
+    if (b) upsertBook({ ...b, deleted: 1 });
+  }
+
+  function mergeBooks(incoming) {
+    let changed = false;
+    const byIsbn = new Map(books.map((b) => [b.isbn, b]));
+    for (const b of incoming || []) {
+      if (!b || !b.isbn) continue;
+      const cur = byIsbn.get(b.isbn);
+      if (!cur || String(b.updatedAt || "") > String(cur.updatedAt || "")) {
+        byIsbn.set(b.isbn, { ...b, deleted: b.deleted ? 1 : 0 });
+        changed = true;
+      }
+    }
+    if (changed) { books = [...byIsbn.values()]; persistBooks(); }
+    return changed;
+  }
+
   function updateSettings(patch) {
     const tokenChanged = patch.syncToken !== undefined && patch.syncToken !== settings.syncToken;
     settings = { ...settings, ...patch };
@@ -216,6 +287,7 @@
     let url = `/api/db?babyId=${encodeURIComponent(settings.babyId)}`;
     if (method === "GET") {
       url += `&rev=${encodeURIComponent(settings.cloudRev || "")}`;
+      url += `&bookrev=${encodeURIComponent(settings.bookRev || "")}`;
       // 差分同期: 受信済み位置を送ると差分だけ返る。1日1回は全件を取り直す（保険）
       const fullDue = Date.now() - (settings.lastFullPullAt || 0) > 86400000;
       if (settings.cloudSince > 0 && !fullDue) url += `&since=${settings.cloudSince}`;
@@ -238,18 +310,24 @@
   }
 
   async function flushPush() {
-    if (!cloudEnabled() || !pendingIds.size || cloud.readonly) return;
+    if (!cloudEnabled() || (!pendingIds.size && !pendingBookIsbns.size) || cloud.readonly) return;
     const sending = [...pendingIds];
+    const sendingBooks = [...pendingBookIsbns];
     const batch = records.filter((r) => pendingIds.has(r.id));
+    const bookBatch = books.filter((b) => pendingBookIsbns.has(b.isbn));
     try {
       setCloud("syncing", "同期中...");
       const res = await dbRequest("POST", {
         records: batch,
+        books: bookBatch.length ? bookBatch : undefined,
         profile: profilePayload()
       });
       sending.forEach((id) => pendingIds.delete(id));
       persistPending();
+      sendingBooks.forEach((isbn) => pendingBookIsbns.delete(isbn));
+      persistPendingBooks();
       settings.cloudRev = res.rev;
+      if (res.bookrev) settings.bookRev = res.bookrev;
       persistSettings(true);
       setCloud("ok");
     } catch (err) {
@@ -267,11 +345,14 @@
       cloud.photoOnly = mode === "photo";
       if (res.unchanged) {
         setCloud("ok");
-        if (pendingIds.size) await flushPush();
+        if (pendingIds.size || pendingBookIsbns.size) await flushPush();
         return { added: 0, updated: 0 };
       }
       const result = merge(res.records || [], { fromCloud: true });
       applyProfile(res.profile);
+      // 絵本マスタ: 差分があるときだけ届く
+      if (res.books) mergeBooks(res.books);
+      if (res.bookrev) { settings.bookRev = res.bookrev; }
       // 差分同期: 受信済み位置を進める
       let since = Number(settings.cloudSince || 0);
       for (const r of res.records || []) since = Math.max(since, Number(r.syncedAt || 0));
@@ -290,7 +371,7 @@
       settings.cloudRev = res.rev;
       persistSettings(true);
       setCloud("ok");
-      if (pendingIds.size) await flushPush();
+      if (pendingIds.size || pendingBookIsbns.size) await flushPush();
       return result;
     } catch (err) {
       setCloud("error", err.message);
@@ -389,7 +470,9 @@
     get settings() { return settings; },
     get cloud() { return cloud; },
     get pendingCount() { return pendingIds.size; },
+    get books() { return liveBooks(); },
     upsert, remove, merge, replaceAll, byDate, updateSettings, newId,
+    upsertBook, removeBook,
     startCloud, cloudPull, syncNow, flushPush,
     pushToSheet, pullFromSheet
   };

@@ -45,20 +45,34 @@ module.exports = async function handler(req, res) {
       const babyId = String(req.query.babyId || "default");
       const clientRev = String(req.query.rev || "");
       const since = Number(req.query.since || 0) || 0;
-      const rev = (await redis([["GET", key(babyId, "rev")]]))[0] || "0";
-      if (clientRev && clientRev === rev) {
-        respond(res, 200, { rev, unchanged: true, readonly: !isEdit, mode });
+      // 絵本マスタ: クライアントが bookrev を送ってきたら、差分があるときだけ books を同封する
+      const wantsBooks = req.query.bookrev !== undefined;
+      const clientBookrev = String(req.query.bookrev || "");
+      const [revRaw, bookrevRaw] = (await redis([["MGET", key(babyId, "rev"), key(babyId, "bookrev")]]))[0] || [];
+      const rev = revRaw || "0";
+      const bookrev = bookrevRaw || "0";
+      const booksChanged = wantsBooks && clientBookrev !== bookrev;
+      if (clientRev && clientRev === rev && !booksChanged) {
+        respond(res, 200, { rev, bookrev, unchanged: true, readonly: !isEdit, mode });
         return;
       }
-      const [values, profileRaw] = await redis([
+      const cmds = [
         ["HVALS", key(babyId, "records")],
         ["GET", key(babyId, "profile")]
-      ]);
+      ];
+      if (booksChanged) cmds.push(["HVALS", key(babyId, "books")]);
+      const results = await redis(cmds);
+      const values = results[0];
+      const profileRaw = results[1];
       let records = (values || []).map((v) => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
       // since付き → 差分だけ返す（5秒の重なりを持たせてインスタンス間の時計差を吸収。マージは冪等なので重複は無害）
       const delta = since > 0;
       if (delta) records = records.filter((r) => Number(r.syncedAt || 0) > since - 5000);
-      respond(res, 200, { rev, records, delta, profile: safeParse(profileRaw), readonly: !isEdit, mode });
+      const payload = { rev, bookrev, records, delta, profile: safeParse(profileRaw), readonly: !isEdit, mode };
+      if (booksChanged) {
+        payload.books = (results[2] || []).map((v) => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
+      }
+      respond(res, 200, payload);
       return;
     }
 
@@ -98,9 +112,27 @@ module.exports = async function handler(req, res) {
           driveFolderId: String(body.profile.driveFolderId || "")
         })]);
       }
+      // 絵本マスタの書き込み（編集用パスコードのみ・isbnをキーにLWW）
+      let bookrev = null;
+      let incomingBooks = isEdit && Array.isArray(body.books)
+        ? body.books.filter((b) => b && b.isbn).map(normalizeBook)
+        : [];
+      if (incomingBooks.length) {
+        const isbns = incomingBooks.map((b) => b.isbn);
+        const existingBooks = await redis([["HMGET", key(babyId, "books"), ...isbns]]);
+        incomingBooks = incomingBooks.filter((b, i) => {
+          const cur = safeParse(existingBooks[0] ? existingBooks[0][i] : null);
+          return !cur || String(b.updatedAt || "") >= String(cur.updatedAt || "");
+        });
+        if (incomingBooks.length) {
+          for (const b of incomingBooks) cmds.push(["HSET", key(babyId, "books"), b.isbn, JSON.stringify(b)]);
+          bookrev = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+          cmds.push(["SET", key(babyId, "bookrev"), bookrev]);
+        }
+      }
       // 500コマンドずつパイプライン実行
       for (let i = 0; i < cmds.length; i += 500) await redis(cmds.slice(i, i + 500));
-      respond(res, 200, { rev, count: toWrite.length });
+      respond(res, 200, { rev, count: toWrite.length, bookrev, bookCount: incomingBooks.length });
       return;
     }
 
@@ -111,6 +143,20 @@ module.exports = async function handler(req, res) {
 };
 
 function key(babyId, part) { return `babylog:${babyId}:${part}`; }
+
+/** 絵本マスタの1件を正規化（isbnがキー） */
+function normalizeBook(b) {
+  return {
+    isbn: String(b.isbn).replace(/[^0-9Xx]/g, "").slice(0, 17),
+    title: String(b.title || "").slice(0, 120),
+    author: String(b.author || "").slice(0, 120),
+    publisher: String(b.publisher || "").slice(0, 80),
+    cover: /^https:\/\//.test(String(b.cover || "")) ? String(b.cover).slice(0, 300) : "",
+    createdAt: String(b.createdAt || ""),
+    updatedAt: String(b.updatedAt || ""),
+    deleted: b.deleted ? 1 : 0
+  };
+}
 
 function normalize(r, babyId, syncedAt) {
   return {

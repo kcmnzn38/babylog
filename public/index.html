@@ -108,6 +108,12 @@
           <p class="hint">↑で1つ上に移動できます。よく使うものを上にどうぞ。</p>
         </div>
 
+        <div class="settings-group">
+          <h2 class="group-title">絵本マスタ</h2>
+          <p class="hint">バーコード(ISBN)を読み取って絵本を登録しておくと、「えほん」の記録でどの本を読んだか選べます。</p>
+          <button class="btn secondary" id="openBookMaster" type="button">📖 絵本マスタを管理</button>
+        </div>
+
         <div class="settings-group" id="syncGroup">
           <h2 class="group-title">みんなで同期（クラウド）</h2>
           <p class="hint">パスコードを入れると、この端末の記録が自動でクラウド(Vercel)に保存され、同じパスコードを入れた家族の端末と自動で同期します。</p>
@@ -228,6 +234,13 @@
           <div class="chip-row" id="poopChips"></div>
         </div>
 
+        <div id="secBook" hidden>
+          <div class="stepper-label">よんだ絵本（マスタから選択・任意）</div>
+          <input id="bookSearch" type="text" class="plain-input" placeholder="🔍 タイトルで検索" autocomplete="off">
+          <div class="book-pick-list" id="bookPickList"></div>
+          <button type="button" class="btn secondary" id="bookAddFromSheet">📷 バーコードで新しい絵本を登録</button>
+        </div>
+
         <label class="field" id="secTitle" hidden>タイトル<input id="recTitle" type="text" placeholder="爪切り、通院 など"></label>
         <label class="field">メモ<input id="recNote" type="text" placeholder="任意"></label>
 
@@ -300,6 +313,50 @@
         <button type="button" id="lightboxShare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>シェア</button>
         <button type="button" id="lightboxSave"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>保存</button>
       </div>
+    </dialog>
+
+    <!-- 絵本マスタ -->
+    <dialog id="bookMasterSheet">
+      <div class="sheet-head">
+        <span class="sheet-badge">📖 絵本マスタ</span>
+        <button class="close-x" type="button" id="bookMasterClose" aria-label="閉じる">×</button>
+      </div>
+      <button class="btn primary" type="button" id="bookMasterAdd">＋ 絵本を登録（バーコード / ISBN）</button>
+      <div class="book-master-list" id="bookMasterList"></div>
+    </dialog>
+
+    <!-- 絵本の追加（スキャン → 検索 → 確認） -->
+    <dialog id="bookAddSheet">
+      <div class="sheet-head">
+        <span class="sheet-badge">📷 絵本を登録</span>
+        <button class="close-x" type="button" id="bookAddClose" aria-label="閉じる">×</button>
+      </div>
+      <div id="bookAddStep1">
+        <p class="hint">本の裏表紙にある「978」から始まるバーコードを読み取ります。</p>
+        <button class="btn primary" type="button" id="bookScanCamera">📷 カメラでスキャン</button>
+        <label class="btn secondary photo-btn" style="width:100%">
+          <span>🖼 バーコードを撮影して読み取る</span>
+          <input id="bookScanFile" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+        <div class="field-row" style="margin-top:10px">
+          <label class="field grow">ISBNを手入力<input id="bookIsbnInput" type="text" inputmode="numeric" placeholder="9784834000825" autocomplete="off"></label>
+          <button class="btn secondary" type="button" id="bookIsbnLookup" style="align-self:flex-end">検索</button>
+        </div>
+        <div class="scan-wrap" id="scanWrap" hidden>
+          <video id="scanVideo" playsinline muted></video>
+          <button class="btn secondary" type="button" id="bookScanStop">スキャンを中止</button>
+        </div>
+      </div>
+      <div id="bookAddStep2" hidden>
+        <div class="book-preview" id="bookPreview"></div>
+        <label class="field">タイトル<input id="bookTitleInput" type="text"></label>
+        <label class="field">作者（任意）<input id="bookAuthorInput" type="text"></label>
+        <div class="btn-row">
+          <button class="btn secondary" type="button" id="bookAddBack">やり直す</button>
+          <button class="btn primary grow" type="button" id="bookAddSave">マスタに登録</button>
+        </div>
+      </div>
+      <p class="rec-error" id="bookAddError" hidden></p>
     </dialog>
 
     <div class="toast" id="toast" hidden>

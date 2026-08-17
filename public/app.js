@@ -427,7 +427,7 @@
       let dur = "";
       if (r.type === "wake" && r.amountMl) dur = `<span class="tl-dur">${fmtDur(r.amountMl)}寝た</span>`;
       else if (feedGap.has(r.id)) dur = `<span class="tl-gap">${fmtGap(feedGap.get(r.id))}ぶり</span>`;
-      const title = r.type === "custom" || r.type === "medicine" ? (r.customTitle || t.label) : t.label;
+      const title = ["custom", "medicine", "book"].includes(r.type) ? (r.customTitle || t.label) : t.label;
       const space = i > 0 ? gapSpace(minutesBetween(ts(day[i - 1]), ts(r))) : 0;
       // 写真: 複数枚はサムネを少し重ねて表示、枚数バッジ付き
       const pl = photoList(r.photo);
@@ -584,6 +584,13 @@
     $("secTitle").hidden = !isTitle;
     if (isTitle) $("recTitle").value = record ? record.customTitle || "" : "";
 
+    $("secBook").hidden = type !== "book";
+    if (type === "book") {
+      sheetBookTitle = record ? record.customTitle || "" : "";
+      $("bookSearch").value = "";
+      renderBookPick();
+    }
+
     sheetPhotos = record ? photoList(record.photo) : [];
     $("photoStatus").hidden = true;
     recError("");
@@ -692,6 +699,7 @@
       rec.note = [attrs, rec.note].filter(Boolean).join("｜");
     }
     if (["medicine", "custom", "vaccine"].includes(type)) rec.customTitle = $("recTitle").value.trim();
+    if (type === "book") rec.customTitle = sheetBookTitle;
     if (type === "wake") rec.amountMl = wakeDuration(rec);
     rec.photo = sheetPhotos.join("|");
     const saved = S.upsert(rec);
@@ -830,6 +838,211 @@
   function openEdit(id) {
     const rec = S.records.find((r) => r.id === id);
     if (rec) openSheet(rec.type, rec);
+  }
+
+  // ---------- 絵本マスタ ----------
+  let sheetBookTitle = "";           // 記録シートで選択中の絵本タイトル
+  let bookAddReturnToSheet = false;  // 記録シートから登録フローに入ったか
+  let scanReader = null;             // ZXingリーダー（スキャン中のみ）
+  let pendingBook = null;            // 確認ステップ中の本
+
+  function bookCover(b, cls) {
+    return b.cover
+      ? `<img class="${cls}" src="${esc(b.cover)}" alt="" loading="lazy">`
+      : `<span class="${cls} book-noimg">📖</span>`;
+  }
+
+  /** 記録シート内: マスタから選ぶリスト */
+  function renderBookPick() {
+    const q = $("bookSearch").value.trim().toLowerCase();
+    const list = S.books.filter((b) => !q || `${b.title}${b.author}`.toLowerCase().includes(q)).slice(0, 30);
+    $("bookPickList").innerHTML = list.map((b) => `
+      <button type="button" class="book-item ${b.title === sheetBookTitle ? "selected" : ""}" data-title="${esc(b.title)}">
+        ${bookCover(b, "book-cover")}
+        <span class="book-meta"><span class="book-title">${esc(b.title)}</span>${b.author ? `<span class="book-author">${esc(b.author)}</span>` : ""}</span>
+        <span class="book-check">✓</span>
+      </button>`).join("") ||
+      `<p class="hint">${q ? "見つかりませんでした" : "マスタが空です。下のボタンから登録できます。"}</p>`;
+    $("bookPickList").querySelectorAll(".book-item").forEach((el) => el.addEventListener("click", () => {
+      sheetBookTitle = sheetBookTitle === el.dataset.title ? "" : el.dataset.title;
+      renderBookPick();
+    }));
+  }
+
+  /** マスタ管理（設定から） */
+  function openBookMaster() {
+    renderBookMaster();
+    $("bookMasterSheet").showModal();
+  }
+
+  function renderBookMaster() {
+    const counts = {};
+    for (const r of S.records) {
+      if (r.type === "book" && r.customTitle) counts[r.customTitle] = (counts[r.customTitle] || 0) + 1;
+    }
+    const canEdit = !S.cloud.readonly && !S.cloud.photoOnly;
+    $("bookMasterAdd").hidden = !canEdit;
+    $("bookMasterList").innerHTML = S.books.map((b) => `
+      <div class="bm-item">
+        ${bookCover(b, "bm-cover")}
+        <span class="book-meta">
+          <span class="book-title">${esc(b.title)}</span>
+          ${b.author ? `<span class="book-author">${esc(b.author)}</span>` : ""}
+          <span class="book-count">よんだ回数: ${counts[b.title] || 0}回</span>
+        </span>
+        ${canEdit ? `<button type="button" class="bm-del" data-isbn="${esc(b.isbn)}" aria-label="削除">×</button>` : ""}
+      </div>`).join("") ||
+      `<p class="hint">まだ登録がありません。「＋ 絵本を登録」からどうぞ。</p>`;
+    // 削除は2段階（誤タップ対策: 1回目で「削除する」に変わり、3秒で戻る）
+    $("bookMasterList").querySelectorAll(".bm-del").forEach((btn) => btn.addEventListener("click", () => {
+      if (btn.dataset.arm === "1") { S.removeBook(btn.dataset.isbn); renderBookMaster(); }
+      else {
+        btn.dataset.arm = "1"; btn.textContent = "削除する"; btn.classList.add("armed");
+        setTimeout(() => { btn.dataset.arm = ""; btn.textContent = "×"; btn.classList.remove("armed"); }, 3000);
+      }
+    }));
+  }
+
+  /** 追加フロー（スキャン → 検索 → 確認） */
+  function openBookAdd(fromSheet) {
+    if (S.cloud.readonly || S.cloud.photoOnly) { toast("この合言葉では絵本マスタを変更できません"); return; }
+    bookAddReturnToSheet = !!fromSheet;
+    pendingBook = null;
+    bookAddError("");
+    $("bookAddStep1").hidden = false;
+    $("bookAddStep2").hidden = true;
+    $("scanWrap").hidden = true;
+    $("bookIsbnInput").value = "";
+    $("bookAddSheet").showModal();
+  }
+
+  function bookAddError(msg) {
+    $("bookAddError").textContent = msg;
+    $("bookAddError").hidden = !msg;
+  }
+
+  /** バーコード読み取りライブラリ（同梱のZXing）を必要になったときだけ読み込む */
+  function ensureZXing() {
+    if (window.ZXing) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "/vendor/zxing.min.js";
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("読み取りライブラリを読み込めませんでした"));
+      document.head.appendChild(s);
+    });
+  }
+
+  function isbnFrom(text) {
+    const d = String(text || "").replace(/[^0-9]/g, "");
+    return /^97[89]\d{10}$/.test(d) ? d : "";
+  }
+
+  async function startCameraScan() {
+    bookAddError("");
+    try {
+      await ensureZXing();
+      $("scanWrap").hidden = false;
+      scanReader = new ZXing.BrowserMultiFormatReader();
+      const isbn = await new Promise((resolve, reject) => {
+        scanReader.decodeFromVideoDevice(null, $("scanVideo"), (res) => {
+          if (res) { const v = isbnFrom(res.getText()); if (v) resolve(v); }
+        }).catch(reject);
+      });
+      stopScan();
+      await lookupAndShow(isbn);
+    } catch (err) {
+      stopScan();
+      bookAddError("カメラを使えませんでした。「バーコードを撮影して読み取る」か、手入力を試してください");
+    }
+  }
+
+  function stopScan() {
+    if (scanReader) { try { scanReader.reset(); } catch (_) { /* noop */ } scanReader = null; }
+    $("scanWrap").hidden = true;
+  }
+
+  async function scanFromFile(file) {
+    bookAddError("📚 写真からバーコードを読み取り中...");
+    try {
+      await ensureZXing();
+      const url = URL.createObjectURL(file);
+      const reader = new ZXing.BrowserMultiFormatReader();
+      let isbn = "";
+      try {
+        const res = await reader.decodeFromImageUrl(url);
+        isbn = isbnFrom(res.getText());
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      if (!isbn) throw new Error("not isbn");
+      bookAddError("");
+      await lookupAndShow(isbn);
+    } catch (_) {
+      bookAddError("読み取れませんでした。バーコードにピントを合わせて、大きく写るように撮ってみてください");
+    }
+  }
+
+  /** ISBN → 本の情報（openBD → Google Books の順で無料APIを検索） */
+  async function lookupIsbn(isbn) {
+    try {
+      const r = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`);
+      const data = await r.json();
+      const s = data && data[0] && data[0].summary;
+      if (s && s.title) {
+        return { isbn, title: s.title, author: cleanAuthor(s.author), publisher: s.publisher || "", cover: s.cover || "" };
+      }
+    } catch (_) { /* 次のAPIへ */ }
+    try {
+      const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&country=JP`);
+      const data = await r.json();
+      const v = data.items && data.items[0] && data.items[0].volumeInfo;
+      if (v && v.title) {
+        const cover = ((v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || "").replace(/^http:/, "https:");
+        return { isbn, title: v.title, author: (v.authors || []).join("、"), publisher: v.publisher || "", cover };
+      }
+    } catch (_) { /* 見つからず */ }
+    return null;
+  }
+
+  function cleanAuthor(a) {
+    return String(a || "").replace(/／(著|作|絵|文|さく|え|ぶん)/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  async function lookupAndShow(isbn) {
+    bookAddError("");
+    $("bookAddStep1").hidden = true;
+    $("bookAddStep2").hidden = false;
+    $("bookPreview").innerHTML = `<p class="hint">📚 本の情報を検索中... (ISBN: ${esc(isbn)})</p>`;
+    $("bookTitleInput").value = "";
+    $("bookAuthorInput").value = "";
+    const info = await lookupIsbn(isbn);
+    pendingBook = info || { isbn, title: "", author: "", publisher: "", cover: "" };
+    $("bookPreview").innerHTML = `
+      <div class="bm-item">
+        ${bookCover(pendingBook, "bm-cover")}
+        <span class="book-meta">
+          <span class="book-title">${esc(pendingBook.title || "情報が見つかりませんでした")}</span>
+          <span class="book-author">${esc(pendingBook.publisher || "")} ISBN: ${esc(isbn)}</span>
+        </span>
+      </div>`;
+    $("bookTitleInput").value = pendingBook.title || "";
+    $("bookAuthorInput").value = pendingBook.author || "";
+    if (!pendingBook.title) bookAddError("見つからない本でも、タイトルを手入力すれば登録できます");
+  }
+
+  function saveBookAdd() {
+    const title = $("bookTitleInput").value.trim();
+    if (!pendingBook) return;
+    if (!title) { bookAddError("タイトルを入れてください"); return; }
+    const saved = S.upsertBook({ ...pendingBook, title, author: $("bookAuthorInput").value.trim() });
+    $("bookAddSheet").close();
+    if (bookAddReturnToSheet) {
+      sheetBookTitle = saved.title;
+      renderBookPick();
+    } else {
+      renderBookMaster();
+    }
   }
 
   // ---------- type sheet ----------
@@ -1531,8 +1744,36 @@
       }, 800 * (tries + 1));
     }, true);
 
+    // 絵本マスタ
+    $("openBookMaster").addEventListener("click", openBookMaster);
+    $("bookMasterClose").addEventListener("click", () => $("bookMasterSheet").close());
+    $("bookMasterAdd").addEventListener("click", () => openBookAdd(false));
+    $("bookAddFromSheet").addEventListener("click", () => openBookAdd(true));
+    $("bookAddClose").addEventListener("click", () => $("bookAddSheet").close());
+    $("bookAddSheet").addEventListener("close", stopScan);
+    $("bookScanCamera").addEventListener("click", startCameraScan);
+    $("bookScanStop").addEventListener("click", stopScan);
+    $("bookScanFile").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (f) scanFromFile(f);
+      e.target.value = "";
+    });
+    $("bookIsbnLookup").addEventListener("click", () => {
+      const isbn = isbnFrom($("bookIsbnInput").value);
+      if (!isbn) { bookAddError("ISBNは978か979で始まる13桁の数字です"); return; }
+      lookupAndShow(isbn);
+    });
+    $("bookAddBack").addEventListener("click", () => {
+      stopScan();
+      $("bookAddStep2").hidden = true;
+      $("bookAddStep1").hidden = false;
+      bookAddError("");
+    });
+    $("bookAddSave").addEventListener("click", saveBookAdd);
+    $("bookSearch").addEventListener("input", renderBookPick);
+
     // モーダルの外側（背景）タップで閉じる
-    ["recordSheet", "typeSheet", "welcomeSheet", "detailSheet"].forEach((id) => {
+    ["recordSheet", "typeSheet", "welcomeSheet", "detailSheet", "bookMasterSheet", "bookAddSheet"].forEach((id) => {
       const dlg = $(id);
       dlg.addEventListener("click", (e) => {
         if (e.target !== dlg) return;
