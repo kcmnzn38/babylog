@@ -863,19 +863,41 @@
       : `<span class="${cls} book-noimg">📖</span>`;
   }
 
-  /** 記録シート内: マスタから選ぶリスト */
+  /** 記録シート内: マスタから選ぶ（検索兼プルダウン。候補は入力中だけ・最大6件） */
+  let bookPickFocus = false;
   function renderBookPick() {
     const q = $("bookSearch").value.trim().toLowerCase();
-    const list = S.books.filter((b) => !q || `${b.title}${b.author}`.toLowerCase().includes(q)).slice(0, 30);
-    $("bookPickList").innerHTML = list.map((b) => `
-      <button type="button" class="book-item ${b.title === sheetBookTitle ? "selected" : ""}" data-title="${esc(b.title)}">
+    // 選択中の本を1行で表示（✕で解除）
+    const sel = sheetBookTitle
+      ? S.books.find((b) => b.title === sheetBookTitle) || { title: sheetBookTitle, cover: "" }
+      : null;
+    $("bookSelected").hidden = !sel;
+    $("bookSearch").hidden = !!sel; // 選択済みのときは検索欄をたたむ
+    if (sel) {
+      $("bookSelected").innerHTML = `
+        <div class="book-item selected">
+          ${bookCover(sel, "book-cover")}
+          <span class="book-meta"><span class="book-title">${esc(sel.title)}</span></span>
+          <button type="button" class="bm-del" id="bookClear" aria-label="選択をはずす">×</button>
+        </div>`;
+      $("bookClear").addEventListener("click", () => { sheetBookTitle = ""; renderBookPick(); });
+    }
+    // 候補: 検索欄にフォーカスがある/入力があるときだけ開く
+    const open = !sel && (bookPickFocus || q);
+    $("bookPickList").hidden = !open;
+    if (!open) return;
+    const all = S.books.filter((b) => !q || `${b.title}${b.author}`.toLowerCase().includes(q));
+    const list = all.slice(0, 6);
+    $("bookPickList").innerHTML = (list.map((b) => `
+      <button type="button" class="book-item" data-title="${esc(b.title)}">
         ${bookCover(b, "book-cover")}
         <span class="book-meta"><span class="book-title">${esc(b.title)}</span>${b.author ? `<span class="book-author">${esc(b.author)}</span>` : ""}</span>
-        <span class="book-check">✓</span>
       </button>`).join("") ||
-      `<p class="hint">${q ? "見つかりませんでした" : "マスタが空です。下のボタンから登録できます。"}</p>`;
+      `<p class="hint">${q ? "見つかりませんでした" : "マスタが空です。下のボタンから登録できます。"}</p>`) +
+      (all.length > 6 ? `<p class="hint">ほか${all.length - 6}冊 — タイトルで絞り込めます</p>` : "");
     $("bookPickList").querySelectorAll(".book-item").forEach((el) => el.addEventListener("click", () => {
-      sheetBookTitle = sheetBookTitle === el.dataset.title ? "" : el.dataset.title;
+      sheetBookTitle = el.dataset.title;
+      $("bookSearch").value = "";
       renderBookPick();
     }));
   }
@@ -1018,14 +1040,29 @@
       } catch (_) { /* 見つからず */ }
     }
     if (info) {
-      // 表紙: openBD → 国立国会図書館の書影 → Google Books の順で、実際に読み込める画像を探す
-      const candidates = [info.cover, `https://ndlsearch.ndl.go.jp/thumbnail/${isbn}.jpg`, googleCover];
+      // 表紙: openBD → 国立国会図書館の書影 → Google Books → Amazonの書影 の順で、
+      // 実際に読み込める画像を探す（絵本はopenBD/NDLに表紙が無いことが多いため）
+      const candidates = [
+        info.cover,
+        `https://ndlsearch.ndl.go.jp/thumbnail/${isbn}.jpg`,
+        googleCover,
+        `https://images-na.ssl-images-amazon.com/images/P/${toIsbn10(isbn)}.09.LZZZZZZZ.jpg`
+      ];
       info.cover = "";
       for (const url of candidates) {
         if (url && await probeImage(url)) { info.cover = url; break; }
       }
     }
     return info;
+  }
+
+  /** ISBN-13 → ISBN-10（Amazonの書影URLに使う） */
+  function toIsbn10(isbn13) {
+    const core = String(isbn13).slice(3, 12);
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += (10 - i) * Number(core[i]);
+    const check = (11 - (sum % 11)) % 11;
+    return core + (check === 10 ? "X" : String(check));
   }
 
   /** 画像URLが実際に表示できるか試す（4秒であきらめる） */
@@ -1810,6 +1847,9 @@
     });
     $("bookAddSave").addEventListener("click", saveBookAdd);
     $("bookSearch").addEventListener("input", renderBookPick);
+    $("bookSearch").addEventListener("focus", () => { bookPickFocus = true; renderBookPick(); });
+    // blur直後のタップで候補を選べるよう、閉じるのは少し待ってから
+    $("bookSearch").addEventListener("blur", () => { setTimeout(() => { bookPickFocus = false; renderBookPick(); }, 250); });
 
     // モーダルの外側（背景）タップで閉じる
     ["recordSheet", "typeSheet", "welcomeSheet", "detailSheet", "bookMasterSheet", "bookAddSheet"].forEach((id) => {

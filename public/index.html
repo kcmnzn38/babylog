@@ -236,8 +236,9 @@
 
         <div id="secBook" hidden>
           <div class="stepper-label">よんだ絵本（マスタから選択・任意）</div>
-          <input id="bookSearch" type="text" class="plain-input" placeholder="🔍 タイトルで検索" autocomplete="off">
-          <div class="book-pick-list" id="bookPickList"></div>
+          <div id="bookSelected" hidden></div>
+          <input id="bookSearch" type="text" class="plain-input" placeholder="🔍 マスタから検索して選ぶ" autocomplete="off">
+          <div class="book-pick-list" id="bookPickList" hidden></div>
           <button type="button" class="btn secondary" id="bookAddFromSheet">📷 バーコードで新しい絵本を登録</button>
         </div>
 
