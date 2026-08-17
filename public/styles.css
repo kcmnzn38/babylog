@@ -659,3 +659,6 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 /* 絵本登録の確認画面: ボタンを横並びに（「やり直す」小・「マスタに登録」大） */
 #bookAddStep2 .btn-row .btn { width: auto; margin-bottom: 0; }
 #bookAddStep2 .btn-row .btn:not(.grow) { flex: 0 0 auto; padding-left: 16px; padding-right: 16px; }
+#secBook #bookSearch { margin-bottom: 10px; }
+#secBook #bookSelected { margin-bottom: 10px; }
+#secBook .book-pick-list { margin-top: 0; }

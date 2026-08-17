@@ -429,12 +429,12 @@
       let dur = "";
       if (r.type === "wake" && r.amountMl) dur = `<span class="tl-dur">${fmtDur(r.amountMl)}寝た</span>`;
       else if (feedGap.has(r.id)) dur = `<span class="tl-gap">${fmtGap(feedGap.get(r.id))}ぶり</span>`;
-      // えほん: 表紙があれば表紙アイコン＋タイトルだけ、なければ「えほん：タイトル」
+      // えほん: アイコンは表紙（あれば）、タイトル行は「えほん」、本の名前はメモ行に（写真のコメントと同じ見た目）
       const bookCover = r.type === "book" && r.customTitle ? coverByTitle.get(r.customTitle) || "" : "";
-      let title = ["custom", "medicine"].includes(r.type) ? (r.customTitle || t.label) : t.label;
-      if (r.type === "book") {
-        title = r.customTitle ? (bookCover ? r.customTitle : `えほん：${r.customTitle}`) : t.label;
-      }
+      const title = ["custom", "medicine"].includes(r.type) ? (r.customTitle || t.label) : t.label;
+      const noteText = r.type === "book"
+        ? [r.customTitle, r.note].filter(Boolean).join("・")
+        : r.note;
       const icon = bookCover
         ? `<span class="tl-icon tl-icon-cover"><img src="${esc(bookCover)}" loading="lazy" alt=""></span>`
         : `<span class="tl-icon">${t.icon}</span>`;
@@ -461,7 +461,7 @@
           ${icon}
           <div class="tl-main">
             <div class="tl-title">${esc(title)} ${value ? `<span class="tl-value">${esc(value)}</span>` : ""} ${dur}</div>
-            ${r.note ? `<div class="tl-note">${esc(r.note)}</div>` : ""}
+            ${noteText ? `<div class="tl-note">${esc(noteText)}</div>` : ""}
           </div>
           ${photo}
         </div>
