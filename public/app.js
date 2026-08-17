@@ -421,17 +421,28 @@
     };
     // 前のレコードとの時間差に応じて行間を少し空ける（平方根スケール・上限26px）
     const gapSpace = (min) => (min <= 10 ? 0 : Math.min(26, Math.round(Math.sqrt(min - 10) * 1.9)));
+    // 絵本の表紙（マスタから）: タイトル → 表紙URL
+    const coverByTitle = new Map(S.books.filter((b) => b.cover).map((b) => [b.title, b.cover]));
     $("timeline").innerHTML = day.map((r, i) => {
       const t = TYPES[r.type] || TYPES.custom;
       const value = recordValueText(r);
       let dur = "";
       if (r.type === "wake" && r.amountMl) dur = `<span class="tl-dur">${fmtDur(r.amountMl)}寝た</span>`;
       else if (feedGap.has(r.id)) dur = `<span class="tl-gap">${fmtGap(feedGap.get(r.id))}ぶり</span>`;
-      const title = ["custom", "medicine", "book"].includes(r.type) ? (r.customTitle || t.label) : t.label;
+      // えほん: 表紙があれば表紙アイコン＋タイトルだけ、なければ「えほん：タイトル」
+      const bookCover = r.type === "book" && r.customTitle ? coverByTitle.get(r.customTitle) || "" : "";
+      let title = ["custom", "medicine"].includes(r.type) ? (r.customTitle || t.label) : t.label;
+      if (r.type === "book") {
+        title = r.customTitle ? (bookCover ? r.customTitle : `えほん：${r.customTitle}`) : t.label;
+      }
+      const icon = bookCover
+        ? `<span class="tl-icon tl-icon-cover"><img src="${esc(bookCover)}" loading="lazy" alt=""></span>`
+        : `<span class="tl-icon">${t.icon}</span>`;
       const space = i > 0 ? gapSpace(minutesBetween(ts(day[i - 1]), ts(r))) : 0;
-      // 写真: 複数枚はサムネを少し重ねて表示、枚数バッジ付き
+      // 写真: 複数枚はサムネを少し重ねて表示、枚数バッジ付き。
+      // 写真つきの記録は種類を問わず幅広カード（大サムネ）で見やすく
       const pl = photoList(r.photo);
-      const pBase = r.type === "photo" ? 72 : 34;
+      const pBase = pl.length ? 72 : 34;
       const pShown = Math.min(pl.length, 3);
       const photo = pl.length
         ? `<span class="tl-photos" data-id="${esc(r.id)}" style="width:${pBase + (pShown - 1) * 12}px;height:${pBase}px">
@@ -446,8 +457,8 @@
       return `<li${space ? ` style="margin-top:${space}px"` : ""}>
         ${timeLabel}
         <span class="tl-rail" style="--dot:${dot}"></span>
-        <div class="tl-card" data-id="${esc(r.id)}"${r.type === "photo" && pl.length ? " data-photo-big" : ""} style="--chip:${CAT_CHIP[t.cat]};--cat:${dot}">
-          <span class="tl-icon">${t.icon}</span>
+        <div class="tl-card" data-id="${esc(r.id)}"${pl.length ? " data-photo-big" : ""} style="--chip:${CAT_CHIP[t.cat]};--cat:${dot}">
+          ${icon}
           <div class="tl-main">
             <div class="tl-title">${esc(title)} ${value ? `<span class="tl-value">${esc(value)}</span>` : ""} ${dur}</div>
             ${r.note ? `<div class="tl-note">${esc(r.note)}</div>` : ""}
@@ -983,30 +994,58 @@
     }
   }
 
-  /** ISBN → 本の情報（openBD → Google Books の順で無料APIを検索） */
+  /** ISBN → 本の情報（openBD → Google Books の順で無料APIを検索。表紙は複数の候補から実際に表示できるものを採用） */
   async function lookupIsbn(isbn) {
+    let info = null;
+    let googleCover = "";
     try {
       const r = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`);
       const data = await r.json();
       const s = data && data[0] && data[0].summary;
       if (s && s.title) {
-        return { isbn, title: s.title, author: cleanAuthor(s.author), publisher: s.publisher || "", cover: s.cover || "" };
+        info = { isbn, title: s.title, author: cleanAuthor(s.author), publisher: s.publisher || "", cover: s.cover || "" };
       }
     } catch (_) { /* 次のAPIへ */ }
-    try {
-      const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&country=JP`);
-      const data = await r.json();
-      const v = data.items && data.items[0] && data.items[0].volumeInfo;
-      if (v && v.title) {
-        const cover = ((v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || "").replace(/^http:/, "https:");
-        return { isbn, title: v.title, author: (v.authors || []).join("、"), publisher: v.publisher || "", cover };
+    if (!info || !info.cover) {
+      try {
+        const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&country=JP`);
+        const data = await r.json();
+        const v = data.items && data.items[0] && data.items[0].volumeInfo;
+        if (v && v.title) {
+          googleCover = ((v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || "").replace(/^http:/, "https:");
+          if (!info) info = { isbn, title: v.title, author: (v.authors || []).join("、"), publisher: v.publisher || "", cover: "" };
+        }
+      } catch (_) { /* 見つからず */ }
+    }
+    if (info) {
+      // 表紙: openBD → 国立国会図書館の書影 → Google Books の順で、実際に読み込める画像を探す
+      const candidates = [info.cover, `https://ndlsearch.ndl.go.jp/thumbnail/${isbn}.jpg`, googleCover];
+      info.cover = "";
+      for (const url of candidates) {
+        if (url && await probeImage(url)) { info.cover = url; break; }
       }
-    } catch (_) { /* 見つからず */ }
-    return null;
+    }
+    return info;
+  }
+
+  /** 画像URLが実際に表示できるか試す（4秒であきらめる） */
+  function probeImage(url) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const timer = setTimeout(() => { img.src = ""; resolve(false); }, 4000);
+      img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth > 1); };
+      img.onerror = () => { clearTimeout(timer); resolve(false); };
+      img.src = url;
+    });
   }
 
   function cleanAuthor(a) {
-    return String(a || "").replace(/／(著|作|絵|文|さく|え|ぶん)/g, " ").replace(/\s+/g, " ").trim();
+    return String(a || "")
+      .replace(/,?\s*\d{4}\s*-\s*(\d{4})?\.?/g, "")   // 「1967-」のような生年表記を除去
+      .replace(/／(著|作|絵|文|さく|え|ぶん|やく|訳|監修)/g, " ")
+      .replace(/,/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   async function lookupAndShow(isbn) {

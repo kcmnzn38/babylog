@@ -653,3 +653,9 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 #secBook > .btn { width: 100%; box-sizing: border-box; }
 .isbn-row { margin-top: 10px; align-items: flex-end; }
 .isbn-row .isbn-btn { width: auto; flex: none; margin-bottom: 10px; padding: 11px 20px; }
+/* えほん: 表紙をアイコンとして表示 */
+.tl-icon.tl-icon-cover { padding: 0; overflow: hidden; background: none; width: 26px; height: 34px; border-radius: 4px; }
+.tl-icon.tl-icon-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 絵本登録の確認画面: ボタンを横並びに（「やり直す」小・「マスタに登録」大） */
+#bookAddStep2 .btn-row .btn { width: auto; margin-bottom: 0; }
+#bookAddStep2 .btn-row .btn:not(.grow) { flex: 0 0 auto; padding-left: 16px; padding-right: 16px; }
