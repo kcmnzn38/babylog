@@ -148,6 +148,19 @@
     return blocks;
   }
 
+  /** 最長ねんね: 日をまたいだ睡眠は、まるごと「起きた日」に計上する（Fitbit等と同じ流儀） */
+  function longestSleepEndingOn(dateStr, blocks) {
+    const dayStart = new Date(`${dateStr}T00:00:00`);
+    const dayEnd = new Date(dayStart.getTime() + 86400000);
+    let longest = 0;
+    for (const b of blocks || allSleepBlocks()) {
+      if (b.end > dayStart && b.end <= dayEnd) {
+        longest = Math.max(longest, Math.round((b.end - b.start) / 60000));
+      }
+    }
+    return longest;
+  }
+
   function sleepMinutesOn(dateStr) {
     const dayStart = new Date(`${dateStr}T00:00:00`);
     const dayEnd = new Date(dayStart.getTime() + 86400000);
@@ -199,6 +212,16 @@
       }));
     body.querySelectorAll("[data-albumfilter]").forEach((b) =>
       b.addEventListener("click", () => { albumFilter = b.dataset.albumfilter; renderAlbum(); }));
+    // 月見出しタップで開閉
+    body.querySelectorAll(".album-month-head").forEach((h) =>
+      h.addEventListener("click", () => {
+        const m = h.dataset.month;
+        const cards = [...body.querySelectorAll(".album-month-head")];
+        const idx = cards.indexOf(h);
+        const open = albumMonthOpen.has(m) ? albumMonthOpen.get(m) : idx === 0;
+        albumMonthOpen.set(m, !open);
+        renderAlbum();
+      }));
   }
 
   function renderLog() {
@@ -288,7 +311,8 @@
         .filter((b) => b.e > b.s);
       const mins = blocks.map((b) => Math.round((b.e - b.s) / 60000));
       const total = mins.reduce((a, m) => a + m, 0);
-      const longest = mins.reduce((a, m) => Math.max(a, m), 0);
+      // 最長は「この日に起きたねんね」のまるごとの長さ（日またぎも通しで数える）
+      const longest = longestSleepEndingOn(currentDate);
       html = `<p class="detail-total">${fmtDur(total)}</p>
         <p class="detail-sub">${blocks.length}回${longest ? `・最長 ${fmtDur(longest)}` : ""}</p>` +
         blocks.map((b, i) => row(
@@ -1186,6 +1210,7 @@
     if (metric === "feed") body.innerHTML = feedChart(days) + feedStatChart(days) + feedTable(days);
     else if (metric === "sleep") body.innerHTML = sleepChart(days) + sleepTrendChart(days);
     else if (metric === "diaper") body.innerHTML = diaperChart(days) + diaperTable(days);
+    else if (metric === "book") body.innerHTML = bookRankView();
     else body.innerHTML = healthView(days);
     body.querySelectorAll("[data-addtype]").forEach((b) =>
       b.addEventListener("click", () => openSheet(b.dataset.addtype)));
@@ -1196,11 +1221,14 @@
   // アルバム: 写真つき記録を月ごとのグリッドで一覧。
   // フィルタは「写真」＋実際に写真がある種類だけを動的に表示する。
   let albumFilter = "photo";
+  const albumMonthOpen = new Map(); // 月ごとの開閉状態（未操作なら「最新の月だけ開く」）
   function albumView() {
     const withPhoto = S.records.filter((r) => r.photo).slice().reverse();
     const counts = new Map();
     withPhoto.forEach((r) => counts.set(r.type, (counts.get(r.type) || 0) + photoList(r.photo).length));
     const keys = ["photo", ...[...counts.keys()].filter((k) => k !== "photo").sort((a, b) => counts.get(b) - counts.get(a))];
+    // えほんは（記録があれば）写真がまだ無くてもフィルタに出す
+    if (!keys.includes("book") && S.records.some((r) => r.type === "book")) keys.push("book");
     if (!keys.includes(albumFilter)) albumFilter = "photo";
     const chips = `<div class="album-filter">${keys.map((k) => {
       const label = k === "photo" ? photoLabel() : `${(TYPES[k] || {}).icon || ""}${(TYPES[k] || {}).label || k}`;
@@ -1208,8 +1236,11 @@
     }).join("")}</div>`;
     const photos = withPhoto.filter((r) => r.type === albumFilter);
     if (!photos.length) {
+      const sub = albumFilter === "photo"
+        ? `「${esc(photoLabel())}」の登録がまだありません。記録タブの日付横の📷ボタンから追加できます。うんちなどの記録に添付した写真も、登録されるとここに種類ごとのタブで並びます。`
+        : `「${esc((TYPES[albumFilter] || {}).label || albumFilter)}」の記録に写真をつけると、ここに並びます。`;
       return chips + `<div class="chart-card"><h3 class="chart-title">📷 アルバム</h3>
-        <p class="chart-sub">「${esc(photoLabel())}」の登録がまだありません。記録タブの日付横の📷ボタンから追加できます。うんちなどの記録に添付した写真も、登録されるとここに種類ごとのタブで並びます。</p></div>`;
+        <p class="chart-sub">${sub}</p></div>`;
     }
     const byMonth = new Map();
     photos.forEach((r) => {
@@ -1217,18 +1248,65 @@
       if (!byMonth.has(m)) byMonth.set(m, []);
       photoList(r.photo).forEach((p, pi) => byMonth.get(m).push({ r, p, pi }));
     });
-    return chips + [...byMonth.entries()].map(([m, list]) => {
+    // 月ごとに折りたたみ（既定: いちばん新しい月だけ開く）
+    return chips + [...byMonth.entries()].map(([m, list], idx) => {
       const [y, mo] = m.split("-");
-      return `<div class="chart-card"><h3 class="chart-title">${y}年${Number(mo)}月</h3>
-        <div class="album-grid">${list.map(({ r, p, pi }) => `
+      const open = albumMonthOpen.has(m) ? albumMonthOpen.get(m) : idx === 0;
+      return `<div class="chart-card album-month">
+        <h3 class="chart-title album-month-head" data-month="${esc(m)}">
+          <span class="am-caret">${open ? "▼" : "▶"}</span>${y}年${Number(mo)}月
+          <span class="am-count">${list.length}枚</span>
+        </h3>
+        ${open ? `<div class="album-grid">${list.map(({ r, p, pi }) => `
           <figure class="album-item" data-rid="${esc(r.id)}" data-pi="${pi}">
             <img src="${esc(photoSrc(p))}" loading="lazy" alt="${esc(r.date)}の写真">
             <figcaption>
               <span class="a-day">${Number(r.date.slice(8, 10))}日</span>
               ${r.note ? `<span class="a-note">${esc(r.note)}</span>` : ""}
             </figcaption>
-          </figure>`).join("")}</div></div>`;
+          </figure>`).join("")}</div>` : ""}
+      </div>`;
     }).join("");
+  }
+
+  /** まとめ「絵本」: 読んだ回数ランキング（全期間累計・上位10は棒つき、以降も全順位） */
+  function bookRankView() {
+    const counts = new Map();
+    for (const r of S.records) {
+      if (r.type === "book" && r.customTitle) counts.set(r.customTitle, (counts.get(r.customTitle) || 0) + 1);
+    }
+    const totalReads = [...counts.values()].reduce((a, c) => a + c, 0);
+    // マスタにあるがまだ読んでいない本も0回で最後に載せる
+    for (const b of S.books) if (!counts.has(b.title)) counts.set(b.title, 0);
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"));
+    if (!ranked.length) {
+      return `<div class="chart-card"><h3 class="chart-title">📖 よんだ絵本</h3>
+        <p class="chart-sub">えほんの記録がまだありません。「その他」→「📖 えほん」から記録すると、ここに読んだ回数のランキングが育っていきます。</p>
+        <button class="btn secondary" data-addtype="book" type="button">📖 えほんを記録する</button></div>`;
+    }
+    const coverByTitle = new Map(S.books.filter((b) => b.cover).map((b) => [b.title, b.cover]));
+    const cover = (title) => coverByTitle.get(title)
+      ? `<img class="br-cover" src="${esc(coverByTitle.get(title))}" loading="lazy" alt="">`
+      : `<span class="br-cover book-noimg">📖</span>`;
+    const maxC = Math.max(1, ranked[0][1]);
+    const row = (title, c, rank, withBar) => `
+      <div class="br-row${withBar ? "" : " small"}">
+        <span class="br-rank">${rank}</span>
+        ${cover(title)}
+        <div class="br-main">
+          <span class="br-title">${esc(title)}</span>
+          ${withBar ? `<div class="br-bar"><i style="width:${Math.max(4, Math.round((c / maxC) * 100))}%"></i></div>` : ""}
+        </div>
+        <span class="br-count">${c}<small>回</small></span>
+      </div>`;
+    const top = ranked.slice(0, 10).map(([t, c], i) => row(t, c, i + 1, true)).join("");
+    const rest = ranked.slice(10).map(([t, c], i) => row(t, c, i + 11, false)).join("");
+    return `<div class="chart-card">
+      <h3 class="chart-title">📖 よんだ絵本ランキング</h3>
+      <p class="chart-sub">全期間の累計です。よんだ回数 合計${totalReads}回・${ranked.filter(([, c]) => c > 0).length}冊。</p>
+      <div class="book-rank">${top}</div>
+      ${rest ? `<div class="book-rank br-rest">${rest}</div>` : ""}
+    </div>`;
   }
 
   function dayLabel(dateStr) {
@@ -1370,18 +1448,17 @@
     for (const d of days) {
       const dayStart = new Date(`${d}T00:00:00`);
       const dayEnd = new Date(dayStart.getTime() + 86400000);
-      let total = 0, longest = 0;
+      let total = 0;
       for (const b of blocks) {
         const s = Math.max(b.start, dayStart);
         const e = Math.min(b.end, dayEnd);
         if (e <= s) continue;
-        const mins = Math.round((e - s) / 60000);
-        total += mins;
-        longest = Math.max(longest, mins);
+        total += Math.round((e - s) / 60000);
       }
-      totals.push(total); longests.push(longest);
+      totals.push(total);
+      longests.push(longestSleepEndingOn(d, blocks));
     }
-    const maxT = Math.max(12 * 60, ...totals);
+    const maxT = Math.max(12 * 60, ...totals, ...longests);
     const bw = (W - padL - padR) / days.length;
     const yT = (v) => H - padB - (v / maxT) * (H - padT - padB);
     const week = days.length <= 7;
@@ -1404,7 +1481,8 @@
     const baseline = `<line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--line)" stroke-width="1"/>`;
     return `<div class="chart-card">
       <h3 class="chart-title">睡眠合計と最長ねんね</h3>
-      <p class="chart-sub">棒＝1日の睡眠合計、折れ線＝いちばん長く続けて寝た時間。折れ線が伸びてくると、まとまって寝られるようになってきたサインです。</p>
+      <p class="chart-sub">棒＝1日の睡眠合計、折れ線＝いちばん長く続けて寝た時間。折れ線が伸びてくると、まとまって寝られるようになってきたサインです。
+        日をまたいだねんねは、まるごと「起きた日」の最長ねんねに数えます。</p>
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="睡眠合計と最長ねんね">${baseline}${bars}${line}${dots}</svg>
       <div class="legend"><span><i style="background:var(--c-sleep);opacity:0.55"></i>合計</span><span><i style="background:var(--accent)"></i>最長ねんね</span></div>
     </div>`;

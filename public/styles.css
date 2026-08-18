@@ -675,3 +675,22 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 }
 /* 写真つきでも えほんカードは横並びを保つ */
 .tl-card[data-photo-big] .tl-main.tl-book-main { flex-direction: row; align-items: center; }
+
+/* ---------- アルバムの月折りたたみ & 絵本ランキング ---------- */
+.album-month-head { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 8px; }
+.am-caret { font-size: 11px; color: var(--ink-3); flex: none; }
+.am-count { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+.book-rank { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.book-rank.br-rest { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); gap: 8px; }
+.br-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.br-rank { flex: none; width: 22px; text-align: right; font-weight: 700; font-size: 13px; color: var(--ink-3); }
+.br-cover { flex: none; width: 32px; height: 42px; object-fit: cover; border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.br-row.small .br-cover { width: 26px; height: 34px; }
+.br-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.br-title { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-row.small .br-title { font-weight: 500; }
+.br-bar { height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 7%, transparent); overflow: hidden; }
+.br-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.br-count { flex: none; font-weight: 700; font-size: 15px; }
+.br-count small { font-size: 11px; font-weight: 600; color: var(--ink-3); margin-left: 1px; }
