@@ -208,7 +208,7 @@
     body.querySelectorAll(".album-item").forEach((f) =>
       f.addEventListener("click", () => {
         const rec = S.records.find((r) => r.id === f.dataset.rid);
-        if (rec) openLightbox(photoList(rec.photo).map(photoSrc), Number(f.dataset.pi || 0), rec.note || "");
+        if (rec) openLightbox(photoList(rec.photo).map(photoSrc), Number(f.dataset.pi || 0), lightboxCaptionFor(rec));
       }));
     body.querySelectorAll("[data-albumfilter]").forEach((b) =>
       b.addEventListener("click", () => { albumFilter = b.dataset.albumfilter; renderAlbum(); }));
@@ -353,6 +353,14 @@
     if (lightboxList.length < 2) return;
     lightboxIdx = (lightboxIdx + delta + lightboxList.length) % lightboxList.length;
     updateLightbox();
+  }
+
+  /** ライトボックスのキャプション: 日時＋（絵本なら📖タイトル）＋コメント */
+  function lightboxCaptionFor(rec) {
+    const d = new Date(rec.date + "T12:00:00");
+    const when = `${d.getMonth() + 1}月${d.getDate()}日(${dowLabel(rec.date)}) ${rec.time}`;
+    const book = rec.type === "book" && rec.customTitle ? `📖 ${rec.customTitle}` : "";
+    return [when, book, rec.note || ""].filter(Boolean).join("\n");
   }
 
   function openLightbox(srcOrList, idx = 0, caption = "") {
@@ -505,7 +513,7 @@
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const rec = day.find((r) => r.id === el.dataset.id);
-        if (rec) openLightbox(photoList(rec.photo).map(photoSrc), 0, rec.note || "");
+        if (rec) openLightbox(photoList(rec.photo).map(photoSrc), 0, lightboxCaptionFor(rec));
       });
     });
   }
@@ -1248,6 +1256,15 @@
       if (!byMonth.has(m)) byMonth.set(m, []);
       photoList(r.photo).forEach((p, pi) => byMonth.get(m).push({ r, p, pi }));
     });
+    // 絵本の写真には右下に表紙バッジ（どの絵本かパッと見でわかるように）
+    const bookCoverMap = new Map(S.books.filter((b) => b.cover).map((b) => [b.title, b.cover]));
+    const bookBadge = (r) => {
+      if (r.type !== "book" || !r.customTitle) return "";
+      const cv = bookCoverMap.get(r.customTitle);
+      return cv
+        ? `<img class="a-book-badge" src="${esc(cv)}" loading="lazy" alt="${esc(r.customTitle)}">`
+        : `<span class="a-book-badge a-book-emoji" title="${esc(r.customTitle)}">📖</span>`;
+    };
     // 月ごとに折りたたみ（既定: いちばん新しい月だけ開く）
     return chips + [...byMonth.entries()].map(([m, list], idx) => {
       const [y, mo] = m.split("-");
@@ -1264,6 +1281,7 @@
               <span class="a-day">${Number(r.date.slice(8, 10))}日</span>
               ${r.note ? `<span class="a-note">${esc(r.note)}</span>` : ""}
             </figcaption>
+            ${bookBadge(r)}
           </figure>`).join("")}</div>` : ""}
       </div>`;
     }).join("");
