@@ -696,13 +696,16 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.45); }
 .br-count small { font-size: 11px; font-weight: 600; color: var(--ink-3); margin-left: 1px; }
 /* ライトボックス: 日時・絵本タイトル・コメントを行分け表示 */
 .lightbox-caption { white-space: pre-line; }
-/* アルバム: 絵本写真の右下に表紙バッジ */
-.a-book-badge {
-  position: absolute; right: 5px; bottom: 5px; z-index: 2;
-  width: 24px; height: 32px; object-fit: cover; border-radius: 4px;
+/* アルバム: 絵本写真の右下に小さな表紙バッジ
+   （.album-item img の width:100% に負けないよう詳細度を上げる） */
+.album-item img.a-book-badge,
+.album-item .a-book-badge {
+  position: absolute; right: 6px; bottom: 6px; z-index: 2;
+  width: 20px; height: 27px; aspect-ratio: auto;
+  object-fit: cover; border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.75); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
-.a-book-emoji {
+.album-item .a-book-emoji {
   display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, 0.45); font-size: 14px;
+  background: rgba(0, 0, 0, 0.45); font-size: 12px;
 }
