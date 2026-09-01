@@ -464,6 +464,10 @@
       // えほん: アイコンは表紙（あれば）。「えほん」の下に本のタイトル、その横にメモ（薄字）
       const bookCover = r.type === "book" && r.customTitle ? coverByTitle.get(r.customTitle) || "" : "";
       const title = ["custom", "medicine"].includes(r.type) ? (r.customTitle || t.label) : t.label;
+      // ミルクの種類（銘柄）はメモ行の先頭に添える
+      const noteText = r.type === "milk" && r.customTitle
+        ? [r.customTitle, r.note].filter(Boolean).join("・")
+        : r.note;
       const icon = bookCover
         ? `<span class="tl-icon tl-icon-cover"><img src="${esc(bookCover)}" loading="lazy" alt=""></span>`
         : `<span class="tl-icon">${t.icon}</span>`;
@@ -498,7 +502,7 @@
           </div>`
             : `<div class="tl-main">
             <div class="tl-title">${esc(title)} ${value ? `<span class="tl-value">${esc(value)}</span>` : ""} ${dur}</div>
-            ${r.note ? `<div class="tl-note">${esc(r.note)}</div>` : ""}
+            ${noteText ? `<div class="tl-note">${esc(noteText)}</div>` : ""}
           </div>`}
           ${photo}
         </div>
@@ -628,6 +632,11 @@
       poopSel = parsePoopAttrs(record ? record.note : "");
       renderPoopChips();
     }
+    $("secMilkBrand").hidden = type !== "milk";
+    if (type === "milk") {
+      milkBrandSel = record ? record.customTitle || "" : "";
+      renderMilkBrandChips();
+    }
     const isTitle = ["medicine", "custom", "vaccine"].includes(type);
     $("secTitle").hidden = !isTitle;
     if (isTitle) $("recTitle").value = record ? record.customTitle || "" : "";
@@ -672,6 +681,18 @@
     else d.setMinutes(d.getMinutes() + deltaMin);
     $("recDate").value = toDateStr(d);
     $("recTime").value = toTimeStr(d);
+  }
+
+  // ミルクの種類（銘柄）。タップで選択・もう一度タップで解除（任意）
+  const MILK_BRANDS = ["E赤ちゃん", "はいはい"];
+  let milkBrandSel = "";
+  function renderMilkBrandChips() {
+    $("milkBrandChips").innerHTML = MILK_BRANDS.map((b) =>
+      `<button type="button" class="chip ${milkBrandSel === b ? "active" : ""}" data-brand="${esc(b)}">${esc(b)}</button>`).join("");
+    $("milkBrandChips").querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+      milkBrandSel = milkBrandSel === c.dataset.brand ? "" : c.dataset.brand;
+      renderMilkBrandChips();
+    }));
   }
 
   function renderPoopChips() {
@@ -748,6 +769,7 @@
     }
     if (["medicine", "custom", "vaccine"].includes(type)) rec.customTitle = $("recTitle").value.trim();
     if (type === "book") rec.customTitle = sheetBookTitle;
+    if (type === "milk") rec.customTitle = milkBrandSel; // ミルクの種類（任意）
     if (type === "wake") rec.amountMl = wakeDuration(rec);
     rec.photo = sheetPhotos.join("|");
     const saved = S.upsert(rec);
